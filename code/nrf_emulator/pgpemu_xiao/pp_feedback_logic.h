@@ -17,7 +17,8 @@ enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_POKESTOP_SPUN,
   PP_FEEDBACK_CONNECTED,
   PP_FEEDBACK_DISCONNECTED,
-  PP_FEEDBACK_FULLY_CHARGED
+  PP_FEEDBACK_FULLY_CHARGED,
+  PP_FEEDBACK_BAG_FULL
 };
 
 // Battery percent from cell voltage, interpolated on a typical LiPo discharge curve.

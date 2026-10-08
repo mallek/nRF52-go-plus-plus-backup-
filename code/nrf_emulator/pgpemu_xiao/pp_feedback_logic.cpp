@@ -31,6 +31,7 @@ static const Entry kRedBlink = { 0x01, 0x0F, 0xF0 };      // fled: blinks after 
 static const Entry kCycleStart = { 0x03, 0xF0, 0x80 };    // Pokestop items: 3-color cycle only
 static const Entry kStopNearby = { 0x04, 0x00, 0xFF };    // Pokestop in range
 static const Entry kEncounter = { 0x02, 0xCC, 0xF0 };     // Pokemon encounter starting
+static const Entry kEncounterAlt = { 0x10, 0xF0, 0xF0 };  // also an encounter: always ack + result after
 
 static bool entryIs(const uint8_t* data, uint8_t index, const Entry& e)
 {
@@ -100,8 +101,16 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
   if (len != 4 + 3 * static_cast<uint16_t>(count)) {
     return PP_FEEDBACK_NONE;
   }
-  if (count <= 1) {
-    return PP_FEEDBACK_NONE;  // single-entry writes are action acks
+  if (count == 0) {
+    return PP_FEEDBACK_NONE;
+  }
+  if (count == 1) {
+    // A dark single entry (color bytes 00 00) is an action ack. A colored one is the
+    // long flash shown instead of items when the bag is full.
+    if (data[5] == 0x00 && data[6] == 0x00) {
+      return PP_FEEDBACK_NONE;
+    }
+    return PP_FEEDBACK_BAG_FULL;
   }
   if (entryIs(data, 0, kShake)) {
     if (containsEntry(data, count, kRainbowStart)) {
@@ -118,7 +127,7 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
   if (entryIs(data, 0, kStopNearby)) {
     return PP_FEEDBACK_POKESTOP_NEARBY;
   }
-  if (entryIs(data, 0, kEncounter)) {
+  if (entryIs(data, 0, kEncounter) || entryIs(data, 0, kEncounterAlt)) {
     return PP_FEEDBACK_POKEMON_NEARBY;
   }
   return PP_FEEDBACK_RESULT_UNKNOWN;
@@ -156,6 +165,9 @@ const char* ppFeedbackEventName(PpFeedbackEvent event)
     }
     case PP_FEEDBACK_FULLY_CHARGED: {
       return "fully-charged";
+    }
+    case PP_FEEDBACK_BAG_FULL: {
+      return "bag-full";
     }
   }
   return "?";

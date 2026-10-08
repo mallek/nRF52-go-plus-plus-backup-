@@ -79,6 +79,10 @@ static bool effectFor(PpFeedbackEvent event, CenterEffect& out)
       out = { CENTER_BLINK, 0, 255, 0, 2, 300, 200, 0 };
       return true;
     }
+    case PP_FEEDBACK_BAG_FULL: {
+      out = { CENTER_BLINK, 255, 120, 0, 1, 1000, 0, 0 };  // one long amber
+      return true;
+    }
     case PP_FEEDBACK_NONE: {
       return false;
     }

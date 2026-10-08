@@ -74,7 +74,7 @@ static void testSizeCapNeverExceeded()
   uint8_t p[85] = { 0, 0, 0, 0x1b };
   uint32_t added = 0;
   for (uint32_t i = 0; i < 5000; ++i) {
-    p[10] = static_cast<uint8_t>(i % 20);  // 20 distinct payloads > pattern table
+    p[10] = static_cast<uint8_t>(i % 40);  // 40 distinct payloads > pattern table
     if (ppLogStoreAddPayload(a, p, sizeof(p), i)) {
       ++added;
     }

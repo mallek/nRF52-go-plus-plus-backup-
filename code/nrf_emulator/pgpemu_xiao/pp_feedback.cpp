@@ -1,7 +1,6 @@
 #include <Arduino.h>
 
 #include "pp_feedback.h"
-#include "pp_feedback_audio.h"
 #include "pp_feedback_battery.h"
 #include "pp_feedback_led.h"
 #include "pp_feedback_log.h"
@@ -46,10 +45,9 @@ void ppFeedbackBegin()
 {
   ppFeedbackBatteryBegin();
   ppFeedbackLedBegin();
-  ppFeedbackAudioBegin();
   ppFeedbackLogBegin();
   started = true;
-  Serial.println("Feedback: ring D0, amp D8/D9/D10, battery gauge on");
+  Serial.println("Feedback: ring D0, battery gauge on");
 }
 
 void ppFeedbackPost(PpFeedbackEvent event)
@@ -116,11 +114,9 @@ void ppFeedbackUpdate()
       ppFeedbackLogMarker(PP_LOG_KIND_DISCONNECT);
     }
     ppFeedbackLedPlayEvent(event, now);
-    ppFeedbackAudioPlayEvent(event, now);
   }
 
   ppFeedbackLedUpdate(now);
-  ppFeedbackAudioUpdate(now);
   ppFeedbackLogUpdate(now);
 }
 
@@ -129,7 +125,6 @@ void ppFeedbackShutdown()
   if (!started) {
     return;
   }
-  ppFeedbackAudioStop();
   ppFeedbackLedOff();
   ppFeedbackLogFlush();
 }

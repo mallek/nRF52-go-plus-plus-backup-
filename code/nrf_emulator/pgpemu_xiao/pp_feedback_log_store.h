@@ -7,7 +7,7 @@
 // in a pattern table; each occurrence is a 6-byte event. Serialized size is capped so
 // the log can never crowd the pairing state out of the internal file system.
 
-static constexpr uint8_t PP_LOG_MAX_PATTERNS = 12;
+static constexpr uint8_t PP_LOG_MAX_PATTERNS = 24;
 static constexpr uint8_t PP_LOG_MAX_PATTERN_LEN = 128;
 static constexpr size_t PP_LOG_MAX_BYTES = 8192;
 

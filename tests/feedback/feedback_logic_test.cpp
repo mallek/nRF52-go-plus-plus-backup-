@@ -128,7 +128,7 @@ static const uint8_t kSpunP7[] = {
   0x03, 0x0F, 0xF0, 0x03, 0x00, 0x8F, 0x03, 0xF0, 0x80, 0x03, 0x0F, 0xF0, 0x03, 0x00, 0x8F, 0x03,
   0xF0, 0x80, 0x03, 0x0F, 0xF0, 0x03, 0x00, 0x8F
 };
-static const uint8_t kUnknownP8[] = {
+static const uint8_t kEncounterP8[] = {
   0x00, 0x00, 0x00, 0x0F, 0x10, 0xF0, 0xF0, 0x08, 0x00, 0x00, 0x10, 0xF0, 0xF0, 0x08, 0x00, 0x00,
   0x10, 0xF0, 0xF0, 0x08, 0x00, 0x00, 0x10, 0xF0, 0xF0, 0x08, 0x00, 0x00, 0x10, 0xF0, 0xF0, 0x08,
   0x00, 0x00, 0x10, 0xF0, 0xF0, 0x08, 0x00, 0x00, 0x40, 0x80, 0x80, 0xFF, 0x80, 0x80, 0x89, 0x80,
@@ -144,13 +144,16 @@ static void testClassify()
   CHECK(ppClassifyLedWrite(kFledP10, sizeof(kFledP10)) == PP_FEEDBACK_FLED);
   CHECK(ppClassifyLedWrite(kSpunP9, sizeof(kSpunP9)) == PP_FEEDBACK_POKESTOP_SPUN);
   CHECK(ppClassifyLedWrite(kSpunP7, sizeof(kSpunP7)) == PP_FEEDBACK_POKESTOP_SPUN);
-  CHECK(ppClassifyLedWrite(kUnknownP8, sizeof(kUnknownP8)) == PP_FEEDBACK_RESULT_UNKNOWN);
+  CHECK(ppClassifyLedWrite(kEncounterP8, sizeof(kEncounterP8)) == PP_FEEDBACK_POKEMON_NEARBY);
 
-  // The action acks are not events.
+  // The dark single-entry action ack is not an event.
   const uint8_t ack[] = { 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00 };
   CHECK(ppClassifyLedWrite(ack, sizeof(ack)) == PP_FEEDBACK_NONE);
-  const uint8_t ackP1[] = { 0x00, 0x00, 0x00, 0x01, 0x18, 0x0f, 0xf0 };
-  CHECK(ppClassifyLedWrite(ackP1, sizeof(ackP1)) == PP_FEEDBACK_NONE);
+  // P1, the long red single flash: bag full (shown in place of Pokestop items).
+  const uint8_t bagFullP1[] = { 0x00, 0x00, 0x00, 0x01, 0x18, 0x0f, 0xf0 };
+  CHECK(ppClassifyLedWrite(bagFullP1, sizeof(bagFullP1)) == PP_FEEDBACK_BAG_FULL);
+  const uint8_t empty[] = { 0x00, 0x00, 0x00, 0x00 };
+  CHECK(ppClassifyLedWrite(empty, sizeof(empty)) == PP_FEEDBACK_NONE);
 
   // Length must match the declared count.
   CHECK(ppClassifyLedWrite(kCaughtP5, sizeof(kCaughtP5) - 1) == PP_FEEDBACK_NONE);
