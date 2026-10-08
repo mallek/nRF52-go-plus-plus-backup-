@@ -26,6 +26,8 @@ static const Note kPokestopSpun[] = { { 1760, 90 } };
 static const Note kConnected[] = { { 1319, 60 }, { 0, 60 }, { 1319, 60 } };
 static const Note kDisconnected[] = { { 392, 200 } };
 static const Note kFullyCharged[] = { { 1047, 80 }, { 1319, 80 }, { 1568, 80 }, { 2093, 200 } };
+// Unclassified effect write: a "huh?" - three quick low blips then a rising question note.
+static const Note kUnknown[] = { { 523, 50 }, { 0, 50 }, { 523, 50 }, { 0, 50 }, { 523, 50 }, { 0, 80 }, { 659, 120 }, { 988, 220 } };
 
 // I2S DMA buffers: each 32-bit word is one stereo frame (same sample left and right).
 static uint32_t toneBuffers[2][kMaxSamples];
@@ -124,8 +126,14 @@ static bool sequenceFor(PpFeedbackEvent event, const Note*& notes, uint8_t& len)
       len = sizeof(kFullyCharged) / sizeof(kFullyCharged[0]);
       return true;
     }
+    case PP_FEEDBACK_RESULT_UNKNOWN: {
+      // Audible on purpose while prototyping: flags writes the classifier does not know yet.
+      notes = kUnknown;
+      len = sizeof(kUnknown) / sizeof(kUnknown[0]);
+      return true;
+    }
     default: {
-      // Nearby prompts and unknown results stay silent by design.
+      // Nearby prompts stay silent by design.
       return false;
     }
   }
