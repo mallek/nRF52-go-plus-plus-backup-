@@ -29,7 +29,8 @@ uint8_t ppBatteryPercentFromMillivolts(uint16_t millivolts);
 void ppBatteryGaugeFrame(uint8_t percent, bool charging, bool blinkOn, bool lit[PP_GAUGE_SEGMENTS]);
 
 // LED/effect writes from the app look like: 00 00 00 <count> then count x 3-byte entries,
-// so len == 4 + 3 * count. The count identifies the effect family.
+// so len == 4 + 3 * count. The entries (not the count or length) identify the family:
+// see the field-log payloads in tests/feedback.
 PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len);
 
 const char* ppFeedbackEventName(PpFeedbackEvent event);

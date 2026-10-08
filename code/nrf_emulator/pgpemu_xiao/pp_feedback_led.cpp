@@ -10,6 +10,7 @@ static constexpr uint8_t kCenterIndex = 0;      // most 7-LED jewels put pixel 0
 static constexpr uint8_t kFirstOuterIndex = 1;  // outer pixels 1..6
 static constexpr uint8_t kBrightness = 40;      // 7 px at full white would be ~420 mA on 3V3
 static constexpr uint32_t kGaugeBlinkMs = 500;
+static constexpr uint8_t kGaugeLevel = 64;      // of 255, on top of kBrightness: ~1/4 of an event
 
 enum CenterStyle : uint8_t {
   CENTER_BLINK,
@@ -118,13 +119,14 @@ static void render(uint32_t nowMs)
   bool lit[PP_GAUGE_SEGMENTS];
   bool blinkOn = (nowMs / kGaugeBlinkMs) % 2 == 0;
   ppBatteryGaugeFrame(gaugePercent, gaugeCharging, blinkOn, lit);
-  // Gauge color: green above half, amber above a sixth, red below.
-  uint32_t gaugeColor = Adafruit_NeoPixel::Color(0, 255, 0);
+  // Gauge color: green above half, amber above a sixth, red below. Scaled down to
+  // kGaugeLevel so the gauge sits well under the center event LED.
+  uint32_t gaugeColor = Adafruit_NeoPixel::Color(0, kGaugeLevel, 0);
   if (gaugePercent < 50) {
-    gaugeColor = Adafruit_NeoPixel::Color(255, 120, 0);
+    gaugeColor = Adafruit_NeoPixel::Color(kGaugeLevel, kGaugeLevel / 2, 0);
   }
   if (gaugePercent < 17) {
-    gaugeColor = Adafruit_NeoPixel::Color(255, 0, 0);
+    gaugeColor = Adafruit_NeoPixel::Color(kGaugeLevel, 0, 0);
   }
   for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
     frame[kFirstOuterIndex + i] = lit[i] ? gaugeColor : 0;
