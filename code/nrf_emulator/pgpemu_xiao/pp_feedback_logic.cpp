@@ -89,6 +89,34 @@ void ppBatteryGaugeFrame(uint8_t percent, bool charging, bool blinkOn, bool lit[
   }
 }
 
+void ppBatteryGaugeView(uint8_t percent, bool charging, bool usbPresent, bool blinkOn,
+                        PpGaugeColor out[PP_GAUGE_SEGMENTS])
+{
+  for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
+    out[i] = PP_GAUGE_OFF;
+  }
+  if (!usbPresent) {
+    if (percent < PP_GAUGE_LOW_PERCENT) {
+      out[0] = PP_GAUGE_RED;
+    }
+    return;
+  }
+  PpGaugeColor color = PP_GAUGE_GREEN;
+  if (percent < 50) {
+    color = PP_GAUGE_AMBER;
+  }
+  if (percent < PP_GAUGE_LOW_PERCENT) {
+    color = PP_GAUGE_RED;
+  }
+  bool lit[PP_GAUGE_SEGMENTS];
+  ppBatteryGaugeFrame(percent, charging, blinkOn, lit);
+  for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
+    if (lit[i]) {
+      out[i] = color;
+    }
+  }
+}
+
 PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
 {
   if (data == nullptr || len < 4) {

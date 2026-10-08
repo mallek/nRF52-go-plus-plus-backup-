@@ -29,6 +29,20 @@ uint8_t ppBatteryPercentFromMillivolts(uint16_t millivolts);
 // segment currently filling follows blinkOn.
 void ppBatteryGaugeFrame(uint8_t percent, bool charging, bool blinkOn, bool lit[PP_GAUGE_SEGMENTS]);
 
+enum PpGaugeColor : uint8_t {
+  PP_GAUGE_OFF = 0,
+  PP_GAUGE_GREEN,
+  PP_GAUGE_AMBER,
+  PP_GAUGE_RED
+};
+
+static constexpr uint8_t PP_GAUGE_LOW_PERCENT = 10;
+
+// What the outer ring shows. On USB: the gauge (red below 10%, amber below 50%, green
+// otherwise). On battery: dark, except one solid red segment below 10%.
+void ppBatteryGaugeView(uint8_t percent, bool charging, bool usbPresent, bool blinkOn,
+                        PpGaugeColor out[PP_GAUGE_SEGMENTS]);
+
 // LED/effect writes from the app look like: 00 00 00 <count> then count x 3-byte entries,
 // so len == 4 + 3 * count. The entries (not the count or length) identify the family:
 // see the field-log payloads in tests/feedback.

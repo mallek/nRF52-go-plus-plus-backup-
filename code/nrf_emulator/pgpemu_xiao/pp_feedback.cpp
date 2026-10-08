@@ -92,7 +92,7 @@ void ppFeedbackUpdate()
 
   if (ppFeedbackBatteryUpdate(now)) {
     const PpBatteryState& b = ppFeedbackBatteryState();
-    ppFeedbackLedSetGauge(b.percent, b.charging);
+    ppFeedbackLedSetGauge(b.percent, b.charging, b.usbPresent);
     if (wasCharging && !b.charging && b.usbPresent) {
       ppFeedbackPost(PP_FEEDBACK_FULLY_CHARGED);
     }

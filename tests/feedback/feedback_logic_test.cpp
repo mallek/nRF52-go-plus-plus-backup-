@@ -84,6 +84,45 @@ static void testGaugeCharging()
   CHECK(litCount(lit) == 6);
 }
 
+static int countColor(const PpGaugeColor c[PP_GAUGE_SEGMENTS], PpGaugeColor want)
+{
+  int n = 0;
+  for (int i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
+    if (c[i] == want) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+static void testGaugeView()
+{
+  PpGaugeColor c[PP_GAUGE_SEGMENTS];
+  // On USB: the full gauge, colored by level.
+  ppBatteryGaugeView(80, false, true, true, c);
+  CHECK(countColor(c, PP_GAUGE_GREEN) == 4 && countColor(c, PP_GAUGE_OFF) == 2);
+  ppBatteryGaugeView(50, false, true, true, c);
+  CHECK(countColor(c, PP_GAUGE_GREEN) == 3);
+  ppBatteryGaugeView(49, false, true, true, c);
+  CHECK(countColor(c, PP_GAUGE_AMBER) == 2);
+  ppBatteryGaugeView(10, true, true, true, c);
+  CHECK(countColor(c, PP_GAUGE_AMBER) == 1 && c[0] == PP_GAUGE_AMBER);
+  ppBatteryGaugeView(9, true, true, true, c);
+  CHECK(countColor(c, PP_GAUGE_RED) == 1 && c[0] == PP_GAUGE_RED);
+  ppBatteryGaugeView(9, true, true, false, c);
+  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
+  // On battery: dark at 10% and up, whatever the level.
+  ppBatteryGaugeView(100, false, false, true, c);
+  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
+  ppBatteryGaugeView(10, false, false, true, c);
+  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
+  // On battery below 10%: one solid red segment, never blinking.
+  ppBatteryGaugeView(9, false, false, false, c);
+  CHECK(c[0] == PP_GAUGE_RED && countColor(c, PP_GAUGE_OFF) == 5);
+  ppBatteryGaugeView(0, false, false, true, c);
+  CHECK(c[0] == PP_GAUGE_RED && countColor(c, PP_GAUGE_OFF) == 5);
+}
+
 // Real payloads from the 2026-10-08 field log (fieldlogs/fieldlog-20261008-*.txt),
 // labeled against the in-game Journal and live observation.
 static const uint8_t kEncounterP0[] = {
@@ -171,6 +210,7 @@ int main()
   testPercentCurve();
   testGaugeNotCharging();
   testGaugeCharging();
+  testGaugeView();
   testClassify();
   if (failures == 0) {
     std::printf("feedback_logic_test: all passed\n");

@@ -10,7 +10,12 @@ static constexpr uint8_t kCenterIndex = 0;      // most 7-LED jewels put pixel 0
 static constexpr uint8_t kFirstOuterIndex = 1;  // outer pixels 1..6
 static constexpr uint8_t kBrightness = 40;      // 7 px at full white would be ~420 mA on 3V3
 static constexpr uint32_t kGaugeBlinkMs = 500;
-static constexpr uint8_t kGaugeLevel = 64;      // of 255, on top of kBrightness: ~1/4 of an event
+// Gauge channel values. NeoPixel scales each by (kBrightness + 1) / 256, so these land
+// near the LED's floor: green 13 -> 2, amber 19/7 -> 3/1, red 19 -> 3. Green gets the
+// lowest value because the eye is most sensitive to it.
+static constexpr uint8_t kGaugeGreen = 13;
+static constexpr uint8_t kGaugeWarm = 19;
+static constexpr uint8_t kGaugeAmberGreen = 7;
 
 enum CenterStyle : uint8_t {
   CENTER_BLINK,
@@ -32,6 +37,7 @@ static Adafruit_NeoPixel ring(kRingCount, kRingPin, NEO_GRB + NEO_KHZ800);
 
 static uint8_t gaugePercent = 0;
 static bool gaugeCharging = false;
+static bool gaugeUsb = false;
 
 static bool effectActive = false;
 static CenterEffect effect = { CENTER_BLINK, 0, 0, 0, 0, 0, 0, 0 };
@@ -90,6 +96,25 @@ static bool effectFor(PpFeedbackEvent event, CenterEffect& out)
   return false;
 }
 
+static uint32_t gaugePixel(PpGaugeColor c)
+{
+  switch (c) {
+    case PP_GAUGE_GREEN: {
+      return Adafruit_NeoPixel::Color(0, kGaugeGreen, 0);
+    }
+    case PP_GAUGE_AMBER: {
+      return Adafruit_NeoPixel::Color(kGaugeWarm, kGaugeAmberGreen, 0);
+    }
+    case PP_GAUGE_RED: {
+      return Adafruit_NeoPixel::Color(kGaugeWarm, 0, 0);
+    }
+    case PP_GAUGE_OFF: {
+      return 0;
+    }
+  }
+  return 0;
+}
+
 static uint32_t centerColor(uint32_t nowMs)
 {
   if (!effectActive) {
@@ -120,20 +145,11 @@ static void render(uint32_t nowMs)
   uint32_t frame[kRingCount];
   frame[kCenterIndex] = centerColor(nowMs);
 
-  bool lit[PP_GAUGE_SEGMENTS];
+  PpGaugeColor gauge[PP_GAUGE_SEGMENTS];
   bool blinkOn = (nowMs / kGaugeBlinkMs) % 2 == 0;
-  ppBatteryGaugeFrame(gaugePercent, gaugeCharging, blinkOn, lit);
-  // Gauge color: green above half, amber above a sixth, red below. Scaled down to
-  // kGaugeLevel so the gauge sits well under the center event LED.
-  uint32_t gaugeColor = Adafruit_NeoPixel::Color(0, kGaugeLevel, 0);
-  if (gaugePercent < 50) {
-    gaugeColor = Adafruit_NeoPixel::Color(kGaugeLevel, kGaugeLevel / 2, 0);
-  }
-  if (gaugePercent < 17) {
-    gaugeColor = Adafruit_NeoPixel::Color(kGaugeLevel, 0, 0);
-  }
+  ppBatteryGaugeView(gaugePercent, gaugeCharging, gaugeUsb, blinkOn, gauge);
   for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    frame[kFirstOuterIndex + i] = lit[i] ? gaugeColor : 0;
+    frame[kFirstOuterIndex + i] = gaugePixel(gauge[i]);
   }
 
   bool changed = forceShow;
@@ -164,10 +180,11 @@ void ppFeedbackLedBegin()
   forceShow = true;
 }
 
-void ppFeedbackLedSetGauge(uint8_t percent, bool charging)
+void ppFeedbackLedSetGauge(uint8_t percent, bool charging, bool usbPresent)
 {
   gaugePercent = percent;
   gaugeCharging = charging;
+  gaugeUsb = usbPresent;
 }
 
 void ppFeedbackLedPlayEvent(PpFeedbackEvent event, uint32_t nowMs)
