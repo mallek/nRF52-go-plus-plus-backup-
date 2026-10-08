@@ -10,3 +10,9 @@ tools/flash_image_reader/pp_device_material.generated.h
 *.zip
 __pycache__/
 *.pyc
+
+# Private device identity (cert, key, MAC) - never commit, at ANY path
+**/pp_device_material.h
+**/pp_device_material.generated.h
+*.bak
+**/build/
