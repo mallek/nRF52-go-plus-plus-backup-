@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "pp_ble_dispatch.h"
+#include "pp_feedback.h"
 #include "pp_connection_coordinator.h"
 #include "pp_log.h"
 
@@ -234,6 +235,7 @@ void ppServiceWriteCallback(const BleDispatchRefs& refs,
     }
     genericStoreWrite(*refs.ledWriteChar, data, len, refs.mediumValueLen);
     refs.maybeTriggerButtonFromLedPayload(data, len);
+    ppFeedbackOnLedWrite(data, len);
     return;
   }
   if (chr == refs.serviceEChar3) {

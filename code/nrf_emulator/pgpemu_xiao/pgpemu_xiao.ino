@@ -14,6 +14,7 @@
 #include "pp_connection_coordinator.h"
 #include "pp_debug_ble.h"
 #include "pp_debug_utils.h"
+#include "pp_feedback.h"
 #include "pp_first_pair_flow.h"
 #include "pp_pair_first_time.h"
 #include "pp_pair_helpers.h"
@@ -245,20 +246,24 @@ static void start_advertising()
 static void connect_callback(uint16_t conn_handle)
 {
   ppHandleConnect(makeAppLifecycleRefs(), conn_handle);
+  ppFeedbackPost(PP_FEEDBACK_CONNECTED);
 }
 
 static void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 {
   ppHandleDisconnect(makeAppLifecycleRefs(), conn_handle, reason);
+  ppFeedbackPost(PP_FEEDBACK_DISCONNECTED);
 }
 
 void setup()
 {
   ppRunBootSequence(makeAppBootRefs());
+  ppFeedbackBegin();
 }
 
 void loop()
 {
   ppRunMainLoopTick(makeAppLoopRefs());
+  ppFeedbackUpdate();
 }
 

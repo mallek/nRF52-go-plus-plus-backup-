@@ -4,6 +4,7 @@
 #include <nrf_soc.h>
 
 #include "pp_app_lifecycle.h"
+#include "pp_feedback.h"
 #include "pp_sleep_export.h"
 
 namespace {
@@ -36,6 +37,7 @@ static void enterDisconnectedSystemOff(const AppLifecycleRefs& refs)
   Serial.print("Wake source armed on raw pin (#");
   Serial.print(refs.physicalResetButtonRawPin);
   Serial.println(") low sense");
+  ppFeedbackShutdown();
   Serial.flush();
   delay(20);
 
