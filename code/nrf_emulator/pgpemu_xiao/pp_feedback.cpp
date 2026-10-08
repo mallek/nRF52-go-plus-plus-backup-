@@ -4,6 +4,8 @@
 #include "pp_feedback_audio.h"
 #include "pp_feedback_battery.h"
 #include "pp_feedback_led.h"
+#include "pp_feedback_log.h"
+#include "pp_feedback_log_store.h"
 
 namespace {
 
@@ -45,6 +47,7 @@ void ppFeedbackBegin()
   ppFeedbackBatteryBegin();
   ppFeedbackLedBegin();
   ppFeedbackAudioBegin();
+  ppFeedbackLogBegin();
   started = true;
   Serial.println("Feedback: ring D0, amp D8/D9/D10, battery gauge on");
 }
@@ -78,6 +81,7 @@ void ppFeedbackOnLedWrite(const uint8_t* data, uint16_t len)
     Serial.print(i + 1 < len ? " " : "");
   }
   Serial.println();
+  ppFeedbackLogPayload(data, len);
   ppFeedbackPost(event);
 }
 
@@ -106,12 +110,18 @@ void ppFeedbackUpdate()
   while (popEvent(event)) {
     Serial.print("Feedback event: ");
     Serial.println(ppFeedbackEventName(event));
+    if (event == PP_FEEDBACK_CONNECTED) {
+      ppFeedbackLogMarker(PP_LOG_KIND_CONNECT);
+    } else if (event == PP_FEEDBACK_DISCONNECTED) {
+      ppFeedbackLogMarker(PP_LOG_KIND_DISCONNECT);
+    }
     ppFeedbackLedPlayEvent(event, now);
     ppFeedbackAudioPlayEvent(event, now);
   }
 
   ppFeedbackLedUpdate(now);
   ppFeedbackAudioUpdate(now);
+  ppFeedbackLogUpdate(now);
 }
 
 void ppFeedbackShutdown()
@@ -121,4 +131,5 @@ void ppFeedbackShutdown()
   }
   ppFeedbackAudioStop();
   ppFeedbackLedOff();
+  ppFeedbackLogFlush();
 }
