@@ -3,7 +3,7 @@
 #include "pp_feedback_log_store.h"
 
 // Image layout (little-endian):
-//   "FBL1" | u8 patternCount | u8 reserved | u16 eventCount
+//   "FBL1" | u8 patternCount | u8 droppedBlocks | u16 eventCount
 //   patternCount x { u8 len | u16 count | len bytes }
 //   eventCount   x { u32 ms | u8 kind | u8 len }
 
@@ -40,12 +40,27 @@ static size_t patternBytes(const PpLogPattern& p)
   return 3 + p.len;
 }
 
+static void dropOldestBlock(PpLogStore& store)
+{
+  uint16_t n = store.eventCount < PP_LOG_DROP_BLOCK ? store.eventCount : PP_LOG_DROP_BLOCK;
+  if (n == 0) {
+    return;
+  }
+  memmove(store.events, store.events + n, static_cast<size_t>(store.eventCount - n) * sizeof(PpLogEvent));
+  store.eventCount = static_cast<uint16_t>(store.eventCount - n);
+  if (store.droppedBlocks < 255) {
+    ++store.droppedBlocks;
+  }
+}
+
 static bool addEvent(PpLogStore& store, uint8_t kind, uint8_t len, uint32_t ms, size_t extraPatternBytes)
 {
-  size_t after = ppLogStoreSerializedSize(store) + extraPatternBytes + PP_LOG_EVENT_BYTES;
-  if (store.full || store.eventCount >= PP_LOG_MAX_EVENTS || after > PP_LOG_MAX_BYTES) {
-    store.full = true;
-    return false;
+  while (store.eventCount >= PP_LOG_MAX_EVENTS ||
+         ppLogStoreSerializedSize(store) + extraPatternBytes + PP_LOG_EVENT_BYTES > PP_LOG_MAX_BYTES) {
+    if (store.eventCount == 0) {
+      return false;
+    }
+    dropOldestBlock(store);
   }
   store.events[store.eventCount] = { ms, kind, len };
   ++store.eventCount;
@@ -58,12 +73,42 @@ void ppLogStoreClear(PpLogStore& store)
 {
   store.patternCount = 0;
   store.eventCount = 0;
-  store.full = false;
+  store.droppedBlocks = 0;
 }
 
 bool ppLogStoreAddMarker(PpLogStore& store, uint8_t kind, uint32_t ms)
 {
   return addEvent(store, kind, 0, ms, 0);
+}
+
+bool ppLogStoreAddSample(PpLogStore& store, uint8_t kind, uint8_t value, uint32_t ms)
+{
+  return addEvent(store, kind, value, ms, 0);
+}
+
+void ppLogStoreCountPayload(PpLogStore& store, const uint8_t* data, uint8_t len)
+{
+  if (data == nullptr || len == 0) {
+    return;
+  }
+  uint8_t storedLen = len > PP_LOG_MAX_PATTERN_LEN ? PP_LOG_MAX_PATTERN_LEN : len;
+  for (uint8_t i = 0; i < store.patternCount; ++i) {
+    PpLogPattern& p = store.patterns[i];
+    if (p.len == storedLen && memcmp(p.bytes, data, storedLen) == 0) {
+      if (p.count < 0xffff) {
+        ++p.count;
+      }
+      return;
+    }
+  }
+  if (store.patternCount >= PP_LOG_MAX_PATTERNS ||
+      ppLogStoreSerializedSize(store) + 3 + storedLen > PP_LOG_MAX_BYTES) {
+    return;
+  }
+  PpLogPattern& p = store.patterns[store.patternCount++];
+  p.len = storedLen;
+  memcpy(p.bytes, data, storedLen);
+  p.count = 1;
 }
 
 bool ppLogStoreAddPayload(PpLogStore& store, const uint8_t* data, uint8_t len, uint32_t ms)
@@ -78,7 +123,9 @@ bool ppLogStoreAddPayload(PpLogStore& store, const uint8_t* data, uint8_t len, u
       if (!addEvent(store, i, len, ms, 0)) {
         return false;
       }
-      ++p.count;
+      if (p.count < 0xffff) {
+        ++p.count;
+      }
       return true;
     }
   }
@@ -115,7 +162,7 @@ size_t ppLogStoreSerialize(const PpLogStore& store, uint8_t* out, size_t cap)
   uint8_t* p = out;
   memcpy(p, kMagic, 4);
   p[4] = store.patternCount;
-  p[5] = 0;
+  p[5] = store.droppedBlocks;
   putU16(p + 6, store.eventCount);
   p += PP_LOG_HEADER_BYTES;
   for (uint8_t i = 0; i < store.patternCount; ++i) {
@@ -174,5 +221,6 @@ bool ppLogStoreDeserialize(PpLogStore& store, const uint8_t* in, size_t len)
   }
   store.patternCount = patternCount;
   store.eventCount = eventCount;
+  store.droppedBlocks = in[5];
   return true;
 }

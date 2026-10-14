@@ -5,7 +5,9 @@
 
 // Pure, host-testable field log of LED/effect writes. Distinct payloads are stored once
 // in a pattern table; each occurrence is a 6-byte event. Serialized size is capped so
-// the log can never crowd the pairing state out of the internal file system.
+// the log can never crowd the pairing state out of the internal file system. When the
+// cap is hit the oldest events are dropped in blocks, so the log always holds the most
+// recent run.
 
 static constexpr uint8_t PP_LOG_MAX_PATTERNS = 24;
 static constexpr uint8_t PP_LOG_MAX_PATTERN_LEN = 128;
@@ -15,7 +17,9 @@ static constexpr size_t PP_LOG_MAX_BYTES = 8192;
 static constexpr uint8_t PP_LOG_KIND_BOOT = 0xF0;
 static constexpr uint8_t PP_LOG_KIND_CONNECT = 0xF1;
 static constexpr uint8_t PP_LOG_KIND_DISCONNECT = 0xF2;
-static constexpr uint8_t PP_LOG_KIND_UNSTORED = 0xFE;  // pattern table full
+static constexpr uint8_t PP_LOG_KIND_BATTERY = 0xF3;      // len = (mV - 3000) / 10, on battery
+static constexpr uint8_t PP_LOG_KIND_BATTERY_USB = 0xF4;  // same, USB present
+static constexpr uint8_t PP_LOG_KIND_UNSTORED = 0xFE;     // pattern table full
 
 struct PpLogPattern {
   uint8_t len;
@@ -32,20 +36,27 @@ struct PpLogEvent {
 static constexpr size_t PP_LOG_HEADER_BYTES = 8;
 static constexpr size_t PP_LOG_EVENT_BYTES = 6;
 static constexpr size_t PP_LOG_MAX_EVENTS = 1200;
+static constexpr uint16_t PP_LOG_DROP_BLOCK = 120;  // events discarded at a time when full
 
 struct PpLogStore {
   PpLogPattern patterns[PP_LOG_MAX_PATTERNS];
   uint8_t patternCount;
   PpLogEvent events[PP_LOG_MAX_EVENTS];
   uint16_t eventCount;
-  bool full;
+  uint8_t droppedBlocks;  // oldest-event blocks discarded so far (saturates at 255)
 };
 
 void ppLogStoreClear(PpLogStore& store);
 
-// Returns false (and sets full) when the event would exceed the size cap.
+// When the store is full the oldest block of events is dropped to make room, so these
+// only return false for bad input.
 bool ppLogStoreAddMarker(PpLogStore& store, uint8_t kind, uint32_t ms);
 bool ppLogStoreAddPayload(PpLogStore& store, const uint8_t* data, uint8_t len, uint32_t ms);
+// A marker that carries one value byte in the event len field (battery samples).
+bool ppLogStoreAddSample(PpLogStore& store, uint8_t kind, uint8_t value, uint32_t ms);
+// Counts the payload in its pattern without storing an event (noise like action acks).
+// An unseen pattern is added to the table with count 1 if there is room.
+void ppLogStoreCountPayload(PpLogStore& store, const uint8_t* data, uint8_t len);
 
 size_t ppLogStoreSerializedSize(const PpLogStore& store);
 // Writes the store into out (cap bytes). Returns bytes written, 0 if it does not fit.

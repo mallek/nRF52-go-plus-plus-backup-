@@ -12,6 +12,8 @@ void ppFeedbackLogPayload(const uint8_t* data, uint16_t len);
 // Loop-side work: drain the queue into the store, flush to flash periodically,
 // handle serial commands.
 void ppFeedbackLogMarker(uint8_t kind);
+// One battery sample (millivolts, USB present). Loop-side only.
+void ppFeedbackLogBattery(uint16_t millivolts, bool usbPresent);
 void ppFeedbackLogUpdate(uint32_t nowMs);
 
 // Write anything pending (before System OFF).

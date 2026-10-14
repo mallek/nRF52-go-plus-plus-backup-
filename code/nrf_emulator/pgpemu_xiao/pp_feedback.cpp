@@ -102,6 +102,11 @@ void ppFeedbackUpdate()
       lastLogMs = now;
       logBattery(b);
     }
+    static uint32_t lastSampleMs = 0;
+    if (now - lastSampleMs >= 600000 || lastSampleMs == 0) {
+      lastSampleMs = now;
+      ppFeedbackLogBattery(b.millivolts, b.usbPresent);
+    }
   }
 
   PpFeedbackEvent event;

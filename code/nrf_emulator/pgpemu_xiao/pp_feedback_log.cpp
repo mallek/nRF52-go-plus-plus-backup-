@@ -73,6 +73,14 @@ static void loadFile()
   file.close();
 }
 
+// The dark single-entry action ack (00 00 00 01 xx 00 00) follows almost every effect
+// write and carries no information; counting it keeps the log from filling with noise.
+static bool isDarkAck(const uint8_t* bytes, uint8_t len)
+{
+  return len == 7 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 1 &&
+         bytes[5] == 0 && bytes[6] == 0;
+}
+
 static void noteEvent(bool added)
 {
   if (added) {
@@ -119,7 +127,11 @@ static void dump(uint32_t nowMs)
   Serial.print(store.eventCount);
   Serial.print(" bytes=");
   Serial.print(ppLogStoreSerializedSize(store));
-  Serial.print(store.full ? " FULL" : "");
+  if (store.droppedBlocks > 0) {
+    Serial.print(" WRAPPED (oldest ~");
+    Serial.print(static_cast<uint32_t>(store.droppedBlocks) * PP_LOG_DROP_BLOCK);
+    Serial.print(" events dropped)");
+  }
   Serial.println(" ===");
   for (uint8_t i = 0; i < store.patternCount; ++i) {
     const PpLogPattern& p = store.patterns[i];
@@ -155,6 +167,19 @@ static void dump(uint32_t nowMs)
       Serial.println("CONNECT");
     } else if (e.kind == PP_LOG_KIND_DISCONNECT) {
       Serial.println("DISCONNECT");
+    } else if (e.kind == PP_LOG_KIND_BATTERY || e.kind == PP_LOG_KIND_BATTERY_USB) {
+      uint32_t mv = 3000 + static_cast<uint32_t>(e.len) * 10;
+      Serial.print("BATT ");
+      Serial.print(mv / 1000);
+      Serial.print('.');
+      if (mv % 1000 < 100) {
+        Serial.print('0');
+      }
+      if (mv % 1000 < 10) {
+        Serial.print('0');
+      }
+      Serial.print(mv % 1000);
+      Serial.println(e.kind == PP_LOG_KIND_BATTERY_USB ? "V usb" : "V");
     } else if (e.kind == PP_LOG_KIND_UNSTORED) {
       Serial.print("UNSTORED len=");
       Serial.println(e.len);
@@ -246,6 +271,17 @@ void ppFeedbackLogMarker(uint8_t kind)
   noteEvent(ppLogStoreAddMarker(store, kind, millis()));
 }
 
+void ppFeedbackLogBattery(uint16_t millivolts, bool usbPresent)
+{
+  if (!ready) {
+    return;
+  }
+  uint16_t steps = millivolts < 3000 ? 0 : static_cast<uint16_t>((millivolts - 3000) / 10);
+  uint8_t value = steps > 255 ? 255 : static_cast<uint8_t>(steps);
+  noteEvent(ppLogStoreAddSample(store, usbPresent ? PP_LOG_KIND_BATTERY_USB : PP_LOG_KIND_BATTERY,
+                                value, millis()));
+}
+
 void ppFeedbackLogUpdate(uint32_t nowMs)
 {
   if (!ready) {
@@ -253,7 +289,11 @@ void ppFeedbackLogUpdate(uint32_t nowMs)
   }
   while (queueTail != queueHead) {
     const QueuedPayload& q = queue[queueTail];
-    noteEvent(ppLogStoreAddPayload(store, q.bytes, q.len, q.ms));
+    if (isDarkAck(q.bytes, q.len)) {
+      ppLogStoreCountPayload(store, q.bytes, q.len);
+    } else {
+      noteEvent(ppLogStoreAddPayload(store, q.bytes, q.len, q.ms));
+    }
     queueTail = static_cast<uint8_t>((queueTail + 1) % kQueueSize);
   }
   if (dirty && (eventsSinceFlush >= kFlushEveryEvents || nowMs - lastFlushMs >= kFlushIntervalMs)) {
