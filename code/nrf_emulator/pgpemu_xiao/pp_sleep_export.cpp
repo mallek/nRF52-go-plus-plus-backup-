@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "pp_sleep_export.h"
+#include "pp_sleep_night.h"
 #include "pp_sleep_policy.h"
 
 namespace {
@@ -37,7 +38,6 @@ static constexpr uint32_t kSelectorRecordMask = 1u << kQueueSelectorUnread;
 static constexpr uint32_t kSleepStreamChunkGapMs = 8;
 static constexpr uint32_t kSelectorPatchSentinel = 0x00000008;
 static constexpr uint16_t kSelectorLengthHalfword = 0x01ef;
-static constexpr uint16_t kDonorSleepLogEndMinute = 496;
 static constexpr uint8_t kDonorRecord21[0x20] = {
   0xFB, 0x2B, 0x00, 0x00, 0x25, 0x2A, 0x00, 0x00,
   0x22, 0x13, 0x00, 0x00, 0xC8, 0x11, 0x00, 0x00,
@@ -59,12 +59,6 @@ static constexpr uint8_t kDonorRecord0x2a[9] = {
 };
 static constexpr uint8_t kDonorRecord0x2f[9] = {
   0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-static constexpr uint8_t kDonorSleepLogTransitions[0x20] = {
-  0x00, 0x40, 0x17, 0x10, 0x18, 0x00, 0x40, 0x10,
-  0x4F, 0x00, 0x94, 0x10, 0x95, 0x40, 0x9B, 0x10,
-  0xDC, 0x00, 0x39, 0x11, 0x47, 0x01, 0x59, 0x11,
-  0x6C, 0x41, 0x75, 0x11, 0xA1, 0x41, 0xF0, 0x41
 };
 struct MockSleepExportState {
   uint32_t runtimeAnchor;
@@ -124,6 +118,26 @@ static const MockSleepExportState kDefaultMockSleepState = {
   { 0 }
 };
 static MockSleepExportState gMockSleepState = kDefaultMockSleepState;
+
+// The sleep-log night replayed to the app. Generated once per prepared session so the
+// payload stays identical if the app reads it again, and differs from night to night.
+static PpSleepNight gNight;
+static bool gNightValid = false;
+
+static void generateNight(uint32_t anchor)
+{
+  uint32_t seed = anchor * 2654435761u;
+  seed ^= micros();
+  seed ^= NRF_FICR->DEVICEID[0];
+  ppSleepNightGenerate(seed, &gNight);
+  gNightValid = true;
+  Serial.print("Sleep night generated: length_min=");
+  Serial.print(gNight.lengthMin);
+  Serial.print(" slack_min=");
+  Serial.print(gNight.slackMin);
+  Serial.print(" entries=");
+  Serial.println(gNight.count);
+}
 
 struct SelectorSlotState {
   uint32_t marker;
@@ -485,6 +499,7 @@ static void prepareReconnectSleepStateForAnchor(uint32_t anchor)
   clearSleepStreamStage();
   gMockSleepState = kDefaultMockSleepState;
   gMockSleepState.runtimeAnchor = anchor;
+  generateNight(anchor);
   memset(gSelectorSlots, 0, sizeof(gSelectorSlots));
   gSelectorActiveSlot = 0;
   gSelectorCurrentSlot = 0;
@@ -524,18 +539,21 @@ static void buildSelectorDataMessagePayload(uint8_t* out)
   out[1] = 'L';
   out[2] = 'E';
   out[3] = 'P';
-  const uint32_t sessionStart =
-    gMockSleepState.runtimeAnchor - (static_cast<uint32_t>(kDonorSleepLogEndMinute) * 60U);
-  writeLe32(out + 4, sessionStart);
-  out[8] = 0x10;
+  if (!gNightValid) {
+    generateNight(gMockSleepState.runtimeAnchor);
+  }
+  writeLe32(out + 4, ppSleepNightStart(gNight, gMockSleepState.runtimeAnchor));
+  out[8] = gNight.count;
   out[9] = 0x00;
   out[10] = 0x00;
   out[11] = 0x00;
   out[12] = 0x00;
   out[13] = 0x00;
-  memcpy(out + kWainaDataCommandLen + kWainaSleepLogRecordHeaderLen,
-         kDonorSleepLogTransitions,
-         sizeof(kDonorSleepLogTransitions));
+  uint8_t* entries = out + kWainaDataCommandLen + kWainaSleepLogRecordHeaderLen;
+  for (uint8_t i = 0; i < gNight.count; ++i) {
+    entries[2 * i] = static_cast<uint8_t>(gNight.entries[i] & 0xff);
+    entries[2 * i + 1] = static_cast<uint8_t>(gNight.entries[i] >> 8);
+  }
 }
 
 static void clearOneQueuedDescriptor(uint8_t selector)
