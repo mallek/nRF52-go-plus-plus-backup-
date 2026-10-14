@@ -32,6 +32,7 @@ static const Entry kCycleStart = { 0x03, 0xF0, 0x80 };    // Pokestop items: 3-c
 static const Entry kStopNearby = { 0x04, 0x00, 0xFF };    // Pokestop in range
 static const Entry kEncounter = { 0x02, 0xCC, 0xF0 };     // Pokemon encounter starting
 static const Entry kEncounterAlt = { 0x10, 0xF0, 0xF0 };  // also an encounter: always ack + result after
+static const Entry kBagFull = { 0x18, 0x0F, 0xF0 };       // single long flash instead of Pokestop items
 
 static bool entryIs(const uint8_t* data, uint8_t index, const Entry& e)
 {
@@ -72,49 +73,18 @@ uint8_t ppBatteryPercentFromMillivolts(uint16_t millivolts)
   return 0;
 }
 
-void ppBatteryGaugeFrame(uint8_t percent, bool charging, bool blinkOn, bool lit[PP_GAUGE_SEGMENTS])
+PpStatusLight ppStatusLight(uint8_t percent, bool charging, bool usbPresent)
 {
-  if (percent > 100) {
-    percent = 100;
+  if (usbPresent && charging) {
+    return PP_STATUS_CHARGING;
   }
-  uint8_t full = static_cast<uint8_t>((static_cast<uint16_t>(percent) * PP_GAUGE_SEGMENTS) / 100);
-  for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    if (i < full) {
-      lit[i] = true;
-    } else if (charging && i == full) {
-      lit[i] = blinkOn;
-    } else {
-      lit[i] = false;
-    }
+  if (percent < PP_STATUS_LOW_PERCENT) {
+    return PP_STATUS_RED;
   }
-}
-
-void ppBatteryGaugeView(uint8_t percent, bool charging, bool usbPresent, bool blinkOn,
-                        PpGaugeColor out[PP_GAUGE_SEGMENTS])
-{
-  for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    out[i] = PP_GAUGE_OFF;
+  if (percent < PP_STATUS_WARN_PERCENT) {
+    return PP_STATUS_AMBER;
   }
-  if (!usbPresent) {
-    if (percent < PP_GAUGE_LOW_PERCENT) {
-      out[0] = PP_GAUGE_RED;
-    }
-    return;
-  }
-  PpGaugeColor color = PP_GAUGE_GREEN;
-  if (percent < 50) {
-    color = PP_GAUGE_AMBER;
-  }
-  if (percent < PP_GAUGE_LOW_PERCENT) {
-    color = PP_GAUGE_RED;
-  }
-  bool lit[PP_GAUGE_SEGMENTS];
-  ppBatteryGaugeFrame(percent, charging, blinkOn, lit);
-  for (uint8_t i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    if (lit[i]) {
-      out[i] = color;
-    }
-  }
+  return PP_STATUS_OFF;
 }
 
 PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
@@ -133,12 +103,16 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
     return PP_FEEDBACK_NONE;
   }
   if (count == 1) {
-    // A dark single entry (color bytes 00 00) is an action ack. A colored one is the
-    // long flash shown instead of items when the bag is full.
+    // A dark single entry (color bytes 00 00) is an action ack. 18 0F F0 is the long
+    // flash shown instead of items when the bag is full. Any other colored single
+    // entry (seen: 10 FF FF, after Pokestop in range) is not decoded yet.
     if (data[5] == 0x00 && data[6] == 0x00) {
       return PP_FEEDBACK_NONE;
     }
-    return PP_FEEDBACK_BAG_FULL;
+    if (entryIs(data, 0, kBagFull)) {
+      return PP_FEEDBACK_BAG_FULL;
+    }
+    return PP_FEEDBACK_UNKNOWN_SINGLE;
   }
   if (entryIs(data, 0, kShake)) {
     if (containsEntry(data, count, kRainbowStart)) {
@@ -196,6 +170,9 @@ const char* ppFeedbackEventName(PpFeedbackEvent event)
     }
     case PP_FEEDBACK_BAG_FULL: {
       return "bag-full";
+    }
+    case PP_FEEDBACK_UNKNOWN_SINGLE: {
+      return "unknown-single";
     }
   }
   return "?";

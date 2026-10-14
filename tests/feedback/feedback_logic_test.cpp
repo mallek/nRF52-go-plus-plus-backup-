@@ -37,90 +37,25 @@ static void testPercentCurve()
   }
 }
 
-static int litCount(const bool lit[PP_GAUGE_SEGMENTS])
+static void testStatusLight()
 {
-  int n = 0;
-  for (int i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    if (lit[i]) {
-      ++n;
-    }
-  }
-  return n;
-}
-
-static void testGaugeNotCharging()
-{
-  bool lit[PP_GAUGE_SEGMENTS];
-  ppBatteryGaugeFrame(0, false, true, lit);
-  CHECK(litCount(lit) == 0);
-  ppBatteryGaugeFrame(16, false, true, lit);
-  CHECK(litCount(lit) == 0);
-  ppBatteryGaugeFrame(17, false, true, lit);
-  CHECK(litCount(lit) == 1 && lit[0]);
-  ppBatteryGaugeFrame(50, false, true, lit);
-  CHECK(litCount(lit) == 3 && lit[0] && lit[1] && lit[2]);
-  ppBatteryGaugeFrame(100, false, false, lit);
-  CHECK(litCount(lit) == 6);
-}
-
-static void testGaugeCharging()
-{
-  bool lit[PP_GAUGE_SEGMENTS];
-  // Empty and charging: the first segment blinks.
-  ppBatteryGaugeFrame(0, true, true, lit);
-  CHECK(litCount(lit) == 1 && lit[0]);
-  ppBatteryGaugeFrame(0, true, false, lit);
-  CHECK(litCount(lit) == 0);
-  // 50%: three solid, the fourth blinks.
-  ppBatteryGaugeFrame(50, true, true, lit);
-  CHECK(litCount(lit) == 4 && lit[3]);
-  ppBatteryGaugeFrame(50, true, false, lit);
-  CHECK(litCount(lit) == 3 && !lit[3]);
-  // Full and still charging: all solid, nothing blinks off.
-  ppBatteryGaugeFrame(100, true, false, lit);
-  CHECK(litCount(lit) == 6);
-  // Out-of-range clamps.
-  ppBatteryGaugeFrame(250, false, false, lit);
-  CHECK(litCount(lit) == 6);
-}
-
-static int countColor(const PpGaugeColor c[PP_GAUGE_SEGMENTS], PpGaugeColor want)
-{
-  int n = 0;
-  for (int i = 0; i < PP_GAUGE_SEGMENTS; ++i) {
-    if (c[i] == want) {
-      ++n;
-    }
-  }
-  return n;
-}
-
-static void testGaugeView()
-{
-  PpGaugeColor c[PP_GAUGE_SEGMENTS];
-  // On USB: the full gauge, colored by level.
-  ppBatteryGaugeView(80, false, true, true, c);
-  CHECK(countColor(c, PP_GAUGE_GREEN) == 4 && countColor(c, PP_GAUGE_OFF) == 2);
-  ppBatteryGaugeView(50, false, true, true, c);
-  CHECK(countColor(c, PP_GAUGE_GREEN) == 3);
-  ppBatteryGaugeView(49, false, true, true, c);
-  CHECK(countColor(c, PP_GAUGE_AMBER) == 2);
-  ppBatteryGaugeView(10, true, true, true, c);
-  CHECK(countColor(c, PP_GAUGE_AMBER) == 1 && c[0] == PP_GAUGE_AMBER);
-  ppBatteryGaugeView(9, true, true, true, c);
-  CHECK(countColor(c, PP_GAUGE_RED) == 1 && c[0] == PP_GAUGE_RED);
-  ppBatteryGaugeView(9, true, true, false, c);
-  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
-  // On battery: dark at 10% and up, whatever the level.
-  ppBatteryGaugeView(100, false, false, true, c);
-  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
-  ppBatteryGaugeView(10, false, false, true, c);
-  CHECK(countColor(c, PP_GAUGE_OFF) == 6);
-  // On battery below 10%: one solid red segment, never blinking.
-  ppBatteryGaugeView(9, false, false, false, c);
-  CHECK(c[0] == PP_GAUGE_RED && countColor(c, PP_GAUGE_OFF) == 5);
-  ppBatteryGaugeView(0, false, false, true, c);
-  CHECK(c[0] == PP_GAUGE_RED && countColor(c, PP_GAUGE_OFF) == 5);
+  // Above 30% on battery: dark.
+  CHECK(ppStatusLight(100, false, false) == PP_STATUS_OFF);
+  CHECK(ppStatusLight(30, false, false) == PP_STATUS_OFF);
+  // Below 30%: amber. Below 10%: red.
+  CHECK(ppStatusLight(29, false, false) == PP_STATUS_AMBER);
+  CHECK(ppStatusLight(10, false, false) == PP_STATUS_AMBER);
+  CHECK(ppStatusLight(9, false, false) == PP_STATUS_RED);
+  CHECK(ppStatusLight(0, false, false) == PP_STATUS_RED);
+  // On USB and charging: charging pulse wins over the low-battery color.
+  CHECK(ppStatusLight(5, true, true) == PP_STATUS_CHARGING);
+  CHECK(ppStatusLight(80, true, true) == PP_STATUS_CHARGING);
+  // On USB, charge finished: dark again (the fully-charged event already flashed).
+  CHECK(ppStatusLight(100, false, true) == PP_STATUS_OFF);
+  // On USB but not charging and still low: still warn.
+  CHECK(ppStatusLight(20, false, true) == PP_STATUS_AMBER);
+  // The CHG line without USB is never a charging state.
+  CHECK(ppStatusLight(50, true, false) == PP_STATUS_OFF);
 }
 
 // Real payloads from the 2026-10-08 field log (fieldlogs/fieldlog-20261008-*.txt),
@@ -191,6 +126,9 @@ static void testClassify()
   // P1, the long red single flash: bag full (shown in place of Pokestop items).
   const uint8_t bagFullP1[] = { 0x00, 0x00, 0x00, 0x01, 0x18, 0x0f, 0xf0 };
   CHECK(ppClassifyLedWrite(bagFullP1, sizeof(bagFullP1)) == PP_FEEDBACK_BAG_FULL);
+  // Other colored single entries are not decoded yet (10 FF FF seen after Pokestop in range).
+  const uint8_t unknownSingle[] = { 0x00, 0x00, 0x00, 0x01, 0x10, 0xff, 0xff };
+  CHECK(ppClassifyLedWrite(unknownSingle, sizeof(unknownSingle)) == PP_FEEDBACK_UNKNOWN_SINGLE);
   const uint8_t empty[] = { 0x00, 0x00, 0x00, 0x00 };
   CHECK(ppClassifyLedWrite(empty, sizeof(empty)) == PP_FEEDBACK_NONE);
 
@@ -208,9 +146,7 @@ static void testClassify()
 int main()
 {
   testPercentCurve();
-  testGaugeNotCharging();
-  testGaugeCharging();
-  testGaugeView();
+  testStatusLight();
   testClassify();
   if (failures == 0) {
     std::printf("feedback_logic_test: all passed\n");

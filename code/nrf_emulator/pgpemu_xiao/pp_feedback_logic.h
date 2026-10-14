@@ -5,8 +5,6 @@
 // Pure feedback logic: no Arduino, no hardware. Compiled into the sketch and
 // also by the host tests in tests/feedback/.
 
-static constexpr uint8_t PP_GAUGE_SEGMENTS = 6;
-
 enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_NONE = 0,
   PP_FEEDBACK_POKEMON_NEARBY,
@@ -18,30 +16,27 @@ enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_CONNECTED,
   PP_FEEDBACK_DISCONNECTED,
   PP_FEEDBACK_FULLY_CHARGED,
-  PP_FEEDBACK_BAG_FULL
+  PP_FEEDBACK_BAG_FULL,
+  PP_FEEDBACK_UNKNOWN_SINGLE
 };
 
 // Battery percent from cell voltage, interpolated on a typical LiPo discharge curve.
 uint8_t ppBatteryPercentFromMillivolts(uint16_t millivolts);
 
-// Which of the 6 outer LEDs are lit. Each segment is 1/6 of the charge.
-// Not charging: completed segments solid. Charging: completed segments solid and the
-// segment currently filling follows blinkOn.
-void ppBatteryGaugeFrame(uint8_t percent, bool charging, bool blinkOn, bool lit[PP_GAUGE_SEGMENTS]);
-
-enum PpGaugeColor : uint8_t {
-  PP_GAUGE_OFF = 0,
-  PP_GAUGE_GREEN,
-  PP_GAUGE_AMBER,
-  PP_GAUGE_RED
+// What the static status light shows when no event is playing.
+enum PpStatusLight : uint8_t {
+  PP_STATUS_OFF = 0,
+  PP_STATUS_AMBER,
+  PP_STATUS_RED,
+  PP_STATUS_CHARGING
 };
 
-static constexpr uint8_t PP_GAUGE_LOW_PERCENT = 10;
+static constexpr uint8_t PP_STATUS_WARN_PERCENT = 30;
+static constexpr uint8_t PP_STATUS_LOW_PERCENT = 10;
 
-// What the outer ring shows. On USB: the gauge (red below 10%, amber below 50%, green
-// otherwise). On battery: dark, except one solid red segment below 10%.
-void ppBatteryGaugeView(uint8_t percent, bool charging, bool usbPresent, bool blinkOn,
-                        PpGaugeColor out[PP_GAUGE_SEGMENTS]);
+// Dark above 30%. Amber below 30%, red below 10%. On USB while charging: CHARGING
+// (takes priority, the caller pulses it). The CHG line without USB is ignored.
+PpStatusLight ppStatusLight(uint8_t percent, bool charging, bool usbPresent);
 
 // LED/effect writes from the app look like: 00 00 00 <count> then count x 3-byte entries,
 // so len == 4 + 3 * count. The entries (not the count or length) identify the family:

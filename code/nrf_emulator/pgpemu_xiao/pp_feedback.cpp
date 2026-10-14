@@ -47,7 +47,7 @@ void ppFeedbackBegin()
   ppFeedbackLedBegin();
   ppFeedbackLogBegin();
   started = true;
-  Serial.println("Feedback: ring D0, battery gauge on");
+  Serial.println("Feedback: ring D7, status light on");
 }
 
 void ppFeedbackPost(PpFeedbackEvent event)
@@ -92,7 +92,7 @@ void ppFeedbackUpdate()
 
   if (ppFeedbackBatteryUpdate(now)) {
     const PpBatteryState& b = ppFeedbackBatteryState();
-    ppFeedbackLedSetGauge(b.percent, b.charging, b.usbPresent);
+    ppFeedbackLedSetBattery(b.percent, b.charging, b.usbPresent);
     if (wasCharging && !b.charging && b.usbPresent) {
       ppFeedbackPost(PP_FEEDBACK_FULLY_CHARGED);
     }
