@@ -13,6 +13,8 @@ static constexpr uint16_t kChaseMs = 2000;
 static constexpr uint8_t kChaseRotations = 2;
 static constexpr uint32_t kPulsePeriodMs = 2000;
 static constexpr uint32_t kPulseStepMs = 40;    // quantized so show() is not called every loop
+static constexpr uint32_t kFullPeriodMs = 3000; // full-warning breathe, slower than the charging one
+static constexpr bool kShowRoutineEvents = false; // nearby / spun / passed flashes (testing aid)
 
 enum EffectStyle : uint8_t {
   EFFECT_WHOLE_BLINK,   // all 7 pixels blink one color
@@ -33,6 +35,8 @@ struct Effect {
 static Adafruit_NeoPixel ring(kRingCount, kRingPin, NEO_GRB + NEO_KHZ800);
 
 static PpStatusLight status = PP_STATUS_OFF;
+static bool pokemonFullWarning = false;
+static bool bagFullWarning = false;
 
 static bool effectActive = false;
 static Effect effect = { EFFECT_WHOLE_BLINK, 0, 0, 0, 0, 0, 0, 0 };
@@ -64,22 +68,42 @@ static bool effectFor(PpFeedbackEvent event, Effect& out)
       out = { EFFECT_WHOLE_BLINK, 0, 255, 0, 2, 300, 200, 0 };
       return true;
     }
+    case PP_FEEDBACK_POKEMON_FULL:
+    case PP_FEEDBACK_STORAGE_FULL: {
+      out = { EFFECT_WHOLE_BLINK, 255, 120, 0, 1, 1000, 0, 0 };  // one long amber, then the breathe
+      return true;
+    }
     case PP_FEEDBACK_BAG_FULL: {
-      out = { EFFECT_WHOLE_BLINK, 255, 120, 0, 1, 1000, 0, 0 };  // one long amber
+      out = { EFFECT_WHOLE_BLINK, 0, 220, 255, 1, 1000, 0, 0 };  // one long cyan, then the breathe
       return true;
     }
     case PP_FEEDBACK_UNKNOWN_SINGLE: {
-      out = { EFFECT_WHOLE_BLINK, 255, 0, 128, 2, 500, 300, 0 };  // magenta: undecoded single flash
+      out = { EFFECT_WHOLE_BLINK, 255, 220, 0, 3, 150, 150, 0 };  // yellow: undecoded single flash
       return true;
     }
     case PP_FEEDBACK_RESULT_UNKNOWN: {
       out = { EFFECT_WHOLE_BLINK, 160, 0, 255, 2, 200, 200, 0 };  // purple: undecoded multi-entry write
       return true;
     }
-    // Decoded but deliberately dark. Still logged by the field log.
-    case PP_FEEDBACK_POKEMON_NEARBY:
-    case PP_FEEDBACK_POKESTOP_NEARBY:
-    case PP_FEEDBACK_POKESTOP_SPUN:
+    // Routine events. Each has its own color so the ring can be checked against the app.
+    // They are frequent, so set kShowRoutineEvents to false to run them dark again
+    // (they are logged either way).
+    case PP_FEEDBACK_POKEMON_NEARBY: {
+      out = { EFFECT_WHOLE_BLINK, 0, 255, 255, 1, 250, 0, 0 };  // cyan
+      return kShowRoutineEvents;
+    }
+    case PP_FEEDBACK_POKESTOP_NEARBY: {
+      out = { EFFECT_WHOLE_BLINK, 0, 0, 255, 1, 250, 0, 0 };  // blue
+      return kShowRoutineEvents;
+    }
+    case PP_FEEDBACK_POKESTOP_SPUN: {
+      out = { EFFECT_WHOLE_BLINK, 0, 255, 0, 1, 400, 0, 0 };  // green
+      return kShowRoutineEvents;
+    }
+    case PP_FEEDBACK_STOP_PASSED: {
+      out = { EFFECT_WHOLE_BLINK, 200, 0, 110, 1, 200, 0, 0 };  // magenta
+      return kShowRoutineEvents;
+    }
     case PP_FEEDBACK_NONE: {
       return false;
     }
@@ -109,6 +133,21 @@ static uint32_t statusColor(uint32_t nowMs)
     }
   }
   return 0;
+}
+
+// Slow breathe on the outer six while the Pokemon box (amber) or the bag (cyan) is full.
+// With both set they alternate, one breath each.
+static uint32_t fullColor(uint32_t nowMs)
+{
+  uint32_t t = ((nowMs / kPulseStepMs) * kPulseStepMs) % kFullPeriodMs;
+  uint32_t half = kFullPeriodMs / 2;
+  uint32_t ramp = t < half ? t : kFullPeriodMs - t;
+  uint32_t level = 25 + (ramp * 230) / half;  // 25..255
+  bool cyan = bagFullWarning && (!pokemonFullWarning || ((nowMs / kFullPeriodMs) % 2) == 1);
+  if (cyan) {
+    return Adafruit_NeoPixel::Color(0, static_cast<uint8_t>((level * 220) / 255), static_cast<uint8_t>(level));
+  }
+  return Adafruit_NeoPixel::Color(static_cast<uint8_t>(level), static_cast<uint8_t>((level * 120) / 255), 0);
 }
 
 // Fills the frame for the active effect. Returns false once it has finished.
@@ -146,6 +185,12 @@ static void render(uint32_t nowMs)
   if (effectActive && !applyEffect(nowMs, frame)) {
     effectActive = false;
   }
+  if ((pokemonFullWarning || bagFullWarning) && !effectActive) {
+    uint32_t color = fullColor(nowMs);
+    for (uint8_t i = kFirstOuterIndex; i < kRingCount; ++i) {
+      frame[i] = color;
+    }
+  }
 
   bool changed = forceShow;
   for (uint8_t i = 0; i < kRingCount; ++i) {
@@ -178,6 +223,12 @@ void ppFeedbackLedBegin()
 void ppFeedbackLedSetBattery(uint8_t percent, bool charging, bool usbPresent)
 {
   status = ppStatusLight(percent, charging, usbPresent);
+}
+
+void ppFeedbackLedSetFull(bool pokemonFull, bool bagFull)
+{
+  pokemonFullWarning = pokemonFull;
+  bagFullWarning = bagFull;
 }
 
 void ppFeedbackLedPlayEvent(PpFeedbackEvent event, uint32_t nowMs)

@@ -123,11 +123,14 @@ static void testClassify()
   // The dark single-entry action ack is not an event.
   const uint8_t ack[] = { 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00 };
   CHECK(ppClassifyLedWrite(ack, sizeof(ack)) == PP_FEEDBACK_NONE);
-  // P1, the long red single flash: bag full (shown in place of Pokestop items).
-  const uint8_t bagFullP1[] = { 0x00, 0x00, 0x00, 0x01, 0x18, 0x0f, 0xf0 };
-  CHECK(ppClassifyLedWrite(bagFullP1, sizeof(bagFullP1)) == PP_FEEDBACK_BAG_FULL);
-  // Other colored single entries are not decoded yet (10 FF FF seen after Pokestop in range).
-  const uint8_t unknownSingle[] = { 0x00, 0x00, 0x00, 0x01, 0x10, 0xff, 0xff };
+  // The long amber single flash: box or bag full (after a Pokemon alert or a stop).
+  const uint8_t storageFull[] = { 0x00, 0x00, 0x00, 0x01, 0x18, 0x0f, 0xf0 };
+  CHECK(ppClassifyLedWrite(storageFull, sizeof(storageFull)) == PP_FEEDBACK_STORAGE_FULL);
+  // 10 FF FF follows Pokestop in range (135 of 244 on a drive): the stop left range.
+  const uint8_t stopPassed[] = { 0x00, 0x00, 0x00, 0x01, 0x10, 0xff, 0xff };
+  CHECK(ppClassifyLedWrite(stopPassed, sizeof(stopPassed)) == PP_FEEDBACK_STOP_PASSED);
+  // Any other colored single entry is still undecoded.
+  const uint8_t unknownSingle[] = { 0x00, 0x00, 0x00, 0x01, 0x22, 0x12, 0x34 };
   CHECK(ppClassifyLedWrite(unknownSingle, sizeof(unknownSingle)) == PP_FEEDBACK_UNKNOWN_SINGLE);
   const uint8_t empty[] = { 0x00, 0x00, 0x00, 0x00 };
   CHECK(ppClassifyLedWrite(empty, sizeof(empty)) == PP_FEEDBACK_NONE);
@@ -143,11 +146,55 @@ static void testClassify()
   CHECK(ppClassifyLedWrite(nullptr, 49) == PP_FEEDBACK_NONE);
 }
 
+static void testFullState()
+{
+  PpFullState s;
+  ppFullStateInit(s);
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 1000));
+
+  // Full after a Pokemon alert: Pokemon box. A catch clears it, a spin does not.
+  ppFullStateNote(s, PP_FEEDBACK_POKEMON_NEARBY, 1000);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 2000));
+  CHECK(s.pokemonFull && !s.bagFull);
+  CHECK(s.lastFull == PP_FEEDBACK_POKEMON_FULL);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 3000));
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 4000));
+
+  // Full after a stop: bag. A spin clears it, a catch does not.
+  ppFullStateNote(s, PP_FEEDBACK_POKESTOP_NEARBY, 10000);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 11000));
+  CHECK(!s.pokemonFull && s.bagFull);
+  CHECK(s.lastFull == PP_FEEDBACK_BAG_FULL);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 12000));
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 13000));
+
+  // A fled throw also clears the Pokemon flag.
+  ppFullStateNote(s, PP_FEEDBACK_POKEMON_NEARBY, 20000);
+  ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 21000);
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_FLED, 22000));
+
+  // Stale or missing context: assume both, either success clears its own half.
+  ppFullStateNote(s, PP_FEEDBACK_POKEMON_NEARBY, 30000);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 30000 + PP_FULL_CONTEXT_MS + 1));
+  CHECK(s.pokemonFull && s.bagFull);
+  CHECK(s.lastFull == PP_FEEDBACK_STORAGE_FULL);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 60000));
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 61000));
+  ppFullStateInit(s);
+  CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 5));
+  CHECK(s.pokemonFull && s.bagFull);
+
+  // Dark events and stop-passed never change the flags.
+  ppFullStateInit(s);
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_STOP_PASSED, 100));
+}
+
 int main()
 {
   testPercentCurve();
   testStatusLight();
   testClassify();
+  testFullState();
   if (failures == 0) {
     std::printf("feedback_logic_test: all passed\n");
     return 0;

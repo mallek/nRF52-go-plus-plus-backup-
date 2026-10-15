@@ -9,6 +9,9 @@
 // and the outer six are dark.
 void ppFeedbackLedBegin();
 void ppFeedbackLedSetBattery(uint8_t percent, bool charging, bool usbPresent);
+// Outer six breathe between events while the Pokemon box (amber) or the bag (cyan) is
+// full. If both are set (source unknown) they alternate.
+void ppFeedbackLedSetFull(bool pokemonFull, bool bagFull);
 void ppFeedbackLedPlayEvent(PpFeedbackEvent event, uint32_t nowMs);
 void ppFeedbackLedUpdate(uint32_t nowMs);
 void ppFeedbackLedOff();

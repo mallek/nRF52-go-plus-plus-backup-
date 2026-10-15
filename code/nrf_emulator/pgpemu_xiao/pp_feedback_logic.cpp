@@ -32,7 +32,8 @@ static const Entry kCycleStart = { 0x03, 0xF0, 0x80 };    // Pokestop items: 3-c
 static const Entry kStopNearby = { 0x04, 0x00, 0xFF };    // Pokestop in range
 static const Entry kEncounter = { 0x02, 0xCC, 0xF0 };     // Pokemon encounter starting
 static const Entry kEncounterAlt = { 0x10, 0xF0, 0xF0 };  // also an encounter: always ack + result after
-static const Entry kBagFull = { 0x18, 0x0F, 0xF0 };       // single long flash instead of Pokestop items
+static const Entry kStorageFull = { 0x18, 0x0F, 0xF0 };   // single long flash: box or bag full
+static const Entry kStopPassed = { 0x10, 0xFF, 0xFF };    // after Pokestop in range, 135 of 244 on a drive
 
 static bool entryIs(const uint8_t* data, uint8_t index, const Entry& e)
 {
@@ -104,13 +105,17 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
   }
   if (count == 1) {
     // A dark single entry (color bytes 00 00) is an action ack. 18 0F F0 is the long
-    // flash shown instead of items when the bag is full. Any other colored single
-    // entry (seen: 10 FF FF, after Pokestop in range) is not decoded yet.
+    // amber flash shown when the Pokemon box or the bag is full. 10 FF FF follows
+    // Pokestop in range and is most likely the stop leaving range (drive-by). Any
+    // other colored single entry is not decoded yet.
     if (data[5] == 0x00 && data[6] == 0x00) {
       return PP_FEEDBACK_NONE;
     }
-    if (entryIs(data, 0, kBagFull)) {
-      return PP_FEEDBACK_BAG_FULL;
+    if (entryIs(data, 0, kStorageFull)) {
+      return PP_FEEDBACK_STORAGE_FULL;
+    }
+    if (entryIs(data, 0, kStopPassed)) {
+      return PP_FEEDBACK_STOP_PASSED;
     }
     return PP_FEEDBACK_UNKNOWN_SINGLE;
   }
@@ -168,12 +173,70 @@ const char* ppFeedbackEventName(PpFeedbackEvent event)
     case PP_FEEDBACK_FULLY_CHARGED: {
       return "fully-charged";
     }
+    case PP_FEEDBACK_STORAGE_FULL: {
+      return "storage-full";
+    }
+    case PP_FEEDBACK_POKEMON_FULL: {
+      return "pokemon-full";
+    }
     case PP_FEEDBACK_BAG_FULL: {
       return "bag-full";
+    }
+    case PP_FEEDBACK_STOP_PASSED: {
+      return "stop-passed";
     }
     case PP_FEEDBACK_UNKNOWN_SINGLE: {
       return "unknown-single";
     }
   }
   return "?";
+}
+
+void ppFullStateInit(PpFullState& state)
+{
+  state.pokemonFull = false;
+  state.bagFull = false;
+  state.context = PP_FEEDBACK_NONE;
+  state.contextMs = 0;
+  state.lastFull = PP_FEEDBACK_NONE;
+}
+
+bool ppFullStateNote(PpFullState& state, PpFeedbackEvent event, uint32_t nowMs)
+{
+  switch (event) {
+    case PP_FEEDBACK_POKEMON_NEARBY:
+    case PP_FEEDBACK_POKESTOP_NEARBY: {
+      state.context = event;
+      state.contextMs = nowMs;
+      break;
+    }
+    case PP_FEEDBACK_STORAGE_FULL: {
+      bool fresh = state.context != PP_FEEDBACK_NONE && nowMs - state.contextMs <= PP_FULL_CONTEXT_MS;
+      if (fresh && state.context == PP_FEEDBACK_POKEMON_NEARBY) {
+        state.pokemonFull = true;
+        state.lastFull = PP_FEEDBACK_POKEMON_FULL;
+      } else if (fresh && state.context == PP_FEEDBACK_POKESTOP_NEARBY) {
+        state.bagFull = true;
+        state.lastFull = PP_FEEDBACK_BAG_FULL;
+      } else {
+        state.pokemonFull = true;
+        state.bagFull = true;
+        state.lastFull = PP_FEEDBACK_STORAGE_FULL;
+      }
+      break;
+    }
+    case PP_FEEDBACK_CAUGHT:
+    case PP_FEEDBACK_FLED: {
+      state.pokemonFull = false;
+      break;
+    }
+    case PP_FEEDBACK_POKESTOP_SPUN: {
+      state.bagFull = false;
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+  return state.pokemonFull || state.bagFull;
 }

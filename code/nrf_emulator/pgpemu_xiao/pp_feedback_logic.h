@@ -16,7 +16,10 @@ enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_CONNECTED,
   PP_FEEDBACK_DISCONNECTED,
   PP_FEEDBACK_FULLY_CHARGED,
-  PP_FEEDBACK_BAG_FULL,
+  PP_FEEDBACK_STORAGE_FULL,  // raw full signal; the source is not known from the bytes
+  PP_FEEDBACK_POKEMON_FULL,  // derived: full signal that followed a Pokemon alert
+  PP_FEEDBACK_BAG_FULL,      // derived: full signal that followed a Pokestop alert
+  PP_FEEDBACK_STOP_PASSED,   // Pokestop left range without a spin (10 FF FF after in range)
   PP_FEEDBACK_UNKNOWN_SINGLE
 };
 
@@ -44,3 +47,20 @@ PpStatusLight ppStatusLight(uint8_t percent, bool charging, bool usbPresent);
 PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len);
 
 const char* ppFeedbackEventName(PpFeedbackEvent event);
+
+// Tracks whether the Pokemon box and/or the bag is full. The full signal is the same
+// for both, so the event just before it says which one it was. A catch or a throw
+// clears the Pokemon flag, a Pokestop spin clears the bag flag.
+struct PpFullState {
+  bool pokemonFull;
+  bool bagFull;
+  PpFeedbackEvent context;  // last Pokemon-nearby or Pokestop-nearby event
+  uint32_t contextMs;
+  PpFeedbackEvent lastFull; // what the latest full signal was: POKEMON_FULL, BAG_FULL or STORAGE_FULL
+};
+
+static constexpr uint32_t PP_FULL_CONTEXT_MS = 20000;
+
+void ppFullStateInit(PpFullState& state);
+// Feed every classified event in order. Returns true while anything is full.
+bool ppFullStateNote(PpFullState& state, PpFeedbackEvent event, uint32_t nowMs);

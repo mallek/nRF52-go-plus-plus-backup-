@@ -16,6 +16,7 @@ static volatile uint8_t queueTail = 0;
 
 static bool started = false;
 static bool wasCharging = false;
+static PpFullState fullState;
 
 static bool popEvent(PpFeedbackEvent& out)
 {
@@ -46,6 +47,7 @@ void ppFeedbackBegin()
   ppFeedbackBatteryBegin();
   ppFeedbackLedBegin();
   ppFeedbackLogBegin();
+  ppFullStateInit(fullState);
   started = true;
   Serial.println("Feedback: ring D7, status light on");
 }
@@ -111,14 +113,18 @@ void ppFeedbackUpdate()
 
   PpFeedbackEvent event;
   while (popEvent(event)) {
+    ppFullStateNote(fullState, event, now);
+    // The raw full signal becomes pokemon-full or bag-full from what came before it.
+    PpFeedbackEvent shown = event == PP_FEEDBACK_STORAGE_FULL ? fullState.lastFull : event;
     Serial.print("Feedback event: ");
-    Serial.println(ppFeedbackEventName(event));
+    Serial.println(ppFeedbackEventName(shown));
     if (event == PP_FEEDBACK_CONNECTED) {
       ppFeedbackLogMarker(PP_LOG_KIND_CONNECT);
     } else if (event == PP_FEEDBACK_DISCONNECTED) {
       ppFeedbackLogMarker(PP_LOG_KIND_DISCONNECT);
     }
-    ppFeedbackLedPlayEvent(event, now);
+    ppFeedbackLedSetFull(fullState.pokemonFull, fullState.bagFull);
+    ppFeedbackLedPlayEvent(shown, now);
   }
 
   ppFeedbackLedUpdate(now);
