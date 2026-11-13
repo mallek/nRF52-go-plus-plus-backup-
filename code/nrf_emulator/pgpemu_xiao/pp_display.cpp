@@ -1,6 +1,8 @@
 #include <Arduino.h>
 
 #include "pp_board.h"
+#include "pp_anim.h"
+#include "pp_anim_logic.h"
 #include "pp_display.h"
 #include "pp_identity.h"
 
@@ -15,8 +17,9 @@ namespace {
 static constexpr uint32_t kComboHoldMs = 1500;
 static constexpr uint32_t kMenuTimeoutMs = 20000;
 static constexpr uint32_t kBacklightTimeoutMs = 60000;
-// A catch, flee, spin or connect lights a dark screen this long so the result is visible.
-static constexpr uint32_t kEventWakeMs = 10000;
+// After a catch or spin animation the status screen stays lit this long.
+static constexpr uint32_t kAfterAnimHoldMs = 5000;
+static constexpr uint32_t kAnimFrameMs = 50;
 static constexpr uint32_t kDebounceMs = 30;
 
 static constexpr uint16_t kBg = ST77XX_BLACK;
@@ -58,6 +61,9 @@ static uint16_t spun = 0;
 static const char* lastEvent = "";
 static uint16_t lastEventColor = kDim;
 static bool statusDirty = true;
+
+static PpAnimState anim = { PP_ANIM_NONE, 0 };
+static uint32_t animFrameAt = 0;
 
 static void readButton(Button& b, uint32_t now)
 {
@@ -167,6 +173,7 @@ static void drawMenu()
 
 static void openMenu(uint32_t now)
 {
+  anim.kind = PP_ANIM_NONE;
   mode = MODE_MENU;
   menuIndex = ppIdentityActive();
   menuActivityAt = now;
@@ -284,7 +291,19 @@ void ppDisplayUpdate()
   if (!waitForRelease) {
     updateCombo(now);
   }
-  if (mode == MODE_STATUS && statusDirty) {
+  if (anim.kind != PP_ANIM_NONE && mode == MODE_STATUS) {
+    if (ppAnimDone(anim, now)) {
+      anim.kind = PP_ANIM_NONE;
+      drawStatusFrame();
+      drawStatusLines();
+    } else if (now - animFrameAt >= kAnimFrameMs) {
+      animFrameAt = now;
+      if (!ppAnimDrawFrame(tft, anim.kind, ppAnimProgress(anim, now))) {
+        anim.kind = PP_ANIM_NONE;
+        drawStatusFrame();
+      }
+    }
+  } else if (mode == MODE_STATUS && statusDirty) {
     drawStatusLines();
   }
   if (backlightOn && static_cast<int32_t>(now - backlightUntil) >= 0) {
@@ -339,8 +358,12 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     }
   }
   statusDirty = true;
-  if (started) {
-    touchBacklight(millis(), kEventWakeMs);
+  PpAnimKind kind = ppAnimKindForEvent(event);
+  if (started && mode == MODE_STATUS && kind != PP_ANIM_NONE) {
+    uint32_t now = millis();
+    ppAnimStart(anim, kind, now);
+    animFrameAt = now - kAnimFrameMs;
+    touchBacklight(now, kAnimDurationMs + kAfterAnimHoldMs);
   }
 }
 
