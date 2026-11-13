@@ -81,6 +81,9 @@ static bool effectFor(PpFeedbackEvent event, Effect& out)
       out = { EFFECT_WHOLE_BLINK, 0, 220, 255, 1, 1000, 0, 0 };  // one long cyan, then the breathe
       return true;
     }
+    case PP_FEEDBACK_READY: {
+      return false;  // screen-only; the ring already blinked white on connect
+    }
     case PP_FEEDBACK_UNKNOWN_SINGLE: {
       out = { EFFECT_WHOLE_BLINK, 255, 220, 0, 3, 150, 150, 0 };  // yellow: undecoded single flash
       return true;

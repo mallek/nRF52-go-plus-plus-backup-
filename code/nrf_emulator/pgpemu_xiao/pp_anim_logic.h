@@ -17,7 +17,8 @@ enum PpAnimKind : uint8_t {
   PP_ANIM_NONE = 0,
   PP_ANIM_CATCH,
   PP_ANIM_SPIN,
-  PP_ANIM_EGG
+  PP_ANIM_EGG,
+  PP_ANIM_READY
 };
 
 struct PpAnimState {

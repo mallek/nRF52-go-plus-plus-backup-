@@ -361,6 +361,12 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       lastEventColor = kAccent;
       break;
     }
+    case PP_FEEDBACK_READY: {
+      connected = true;
+      lastEvent = "ready!";
+      lastEventColor = ST77XX_YELLOW;
+      break;
+    }
     case PP_FEEDBACK_BAG_FULL: {
       lastEvent = "BAG FULL";
       lastEventColor = ST77XX_CYAN;

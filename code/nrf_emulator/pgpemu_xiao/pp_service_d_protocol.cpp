@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <string.h>
 
+#include "pp_feedback.h"
 #include "pp_service_d_protocol.h"
 
 bool ppServiceDProtocolParseTypedWrite(const uint8_t* data,
@@ -197,6 +198,7 @@ bool ppServiceDProtocolProcessCompactCompletion(const ReconnectCompactServiceDRe
     *refs.freshAuthStep = 0;
     *refs.freshAuthAt = 0;
     refs.resetServiceDCertState();
+    ppFeedbackPost(PP_FEEDBACK_READY);
     return true;
   }
 

@@ -2,7 +2,7 @@
 
 uint32_t ppAnimDurationMs(PpAnimKind kind)
 {
-  return kind == PP_ANIM_EGG ? kEggDurationMs : kAnimDurationMs;
+  return (kind == PP_ANIM_EGG || kind == PP_ANIM_READY) ? kEggDurationMs : kAnimDurationMs;
 }
 
 void ppAnimStart(PpAnimState& state, PpAnimKind kind, uint32_t now)
@@ -37,6 +37,9 @@ PpAnimKind ppAnimKindForEvent(PpFeedbackEvent event)
     }
     case PP_FEEDBACK_POKESTOP_SPUN: {
       return PP_ANIM_SPIN;
+    }
+    case PP_FEEDBACK_READY: {
+      return PP_ANIM_READY;
     }
     default: {
       return PP_ANIM_NONE;

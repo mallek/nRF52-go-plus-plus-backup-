@@ -188,6 +188,9 @@ const char* ppFeedbackEventName(PpFeedbackEvent event)
     case PP_FEEDBACK_UNKNOWN_SINGLE: {
       return "unknown-single";
     }
+    case PP_FEEDBACK_READY: {
+      return "ready";
+    }
   }
   return "?";
 }

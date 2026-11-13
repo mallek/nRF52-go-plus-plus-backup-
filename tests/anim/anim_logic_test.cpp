@@ -1,9 +1,11 @@
 // Host tests for pp_anim_logic. Build + run from this folder (WSL or any g++):
 //   g++ -std=c++17 -Wall -Wextra -Werror -I../../code/nrf_emulator/pgpemu_xiao
-//       anim_logic_test.cpp ../../code/nrf_emulator/pgpemu_xiao/pp_anim_logic.cpp -o t
+//       anim_logic_test.cpp ../../code/nrf_emulator/pgpemu_xiao/pp_anim_logic.cpp
+//       ../../code/nrf_emulator/pgpemu_xiao/pp_feedback_logic.cpp -o t
 //   ./t
 
 #include <cstdio>
+#include <cstring>
 
 #include "pp_anim_logic.h"
 
@@ -56,6 +58,9 @@ static void testEventMap()
   CHECK(ppAnimKindForEvent(PP_FEEDBACK_POKESTOP_SPUN) == PP_ANIM_SPIN);
   CHECK(ppAnimKindForEvent(PP_FEEDBACK_FLED) == PP_ANIM_NONE);
   CHECK(ppAnimKindForEvent(PP_FEEDBACK_CONNECTED) == PP_ANIM_NONE);
+  CHECK(ppAnimKindForEvent(PP_FEEDBACK_READY) == PP_ANIM_READY);
+  CHECK(ppAnimDurationMs(PP_ANIM_READY) == 2500);
+  CHECK(std::strcmp(ppFeedbackEventName(PP_FEEDBACK_READY), "ready") == 0);
 }
 
 static void testEggDuration()

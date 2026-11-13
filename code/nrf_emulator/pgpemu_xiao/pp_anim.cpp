@@ -208,6 +208,96 @@ static void drawSpin(uint16_t p)
   }
 }
 
+// Vertical offset for pop-up characters: 0 = fully up, kAnimH = below the
+// bottom edge. Rises over 0-300, holds 300-720 (plus `hold`), sinks 720-1000.
+static int16_t popOffset(uint16_t p, float hold)
+{
+  float y;
+  if (p < 300) {
+    y = kAnimH * (1.0f - easeOut(phase(p, 0, 300)));
+  } else if (p < 720) {
+    y = hold;
+  } else {
+    float t = phase(p, 720, 1000);
+    y = kAnimH * t * t;
+  }
+  return static_cast<int16_t>(y);
+}
+
+// Thick zigzag lightning bolt with its top at (x, y).
+static void bolt(int16_t x, int16_t y, uint16_t color)
+{
+  static const int8_t pts[5][2] = { { 0, 0 }, { -12, 22 }, { 2, 22 }, { -10, 46 }, { 14, 16 } };
+  for (int16_t k = -2; k <= 2; ++k) {
+    canvas->drawLine(x + pts[0][0] + k, y + pts[0][1], x + pts[1][0] + k, y + pts[1][1], color);
+    canvas->drawLine(x + pts[1][0], y + pts[1][1] + k / 2, x + pts[2][0], y + pts[2][1] + k / 2, color);
+    canvas->drawLine(x + pts[2][0] + k, y + pts[2][1], x + pts[3][0] + k, y + pts[3][1], color);
+  }
+}
+
+// Connected and ready: an electric mouse hops up, cheeks crackling, bolts flash.
+static void drawReady(uint16_t p)
+{
+  const uint16_t yellow = rgb(255, 214, 32);
+  const uint16_t tip = rgb(60, 50, 40);
+  const uint16_t cheek = rgb(235, 40, 40);
+  const uint16_t ink = rgb(25, 20, 15);
+
+  // Two happy hops while up.
+  float hop = -fabsf(sinf(phase(p, 300, 720) * 3.14159f * 2.0f)) * 10.0f;
+  int16_t d = popOffset(p, hop);
+
+  // Body and paws.
+  canvas->fillEllipse(kCx, 200 + d, 64, 58, yellow);
+  canvas->fillEllipse(kCx - 30, 166 + d, 12, 9, yellow);
+  canvas->fillEllipse(kCx + 30, 166 + d, 12, 9, yellow);
+  canvas->drawFastHLine(kCx - 36, 168 + d, 12, rgb(200, 160, 20));
+  canvas->drawFastHLine(kCx + 24, 168 + d, 12, rgb(200, 160, 20));
+
+  // Long ears with dark tips (left, then mirrored right).
+  for (int8_t side = -1; side <= 1; side += 2) {
+    int16_t b1x = kCx + side * 38, b1y = 78 + d;
+    int16_t b2x = kCx + side * 18, b2y = 66 + d;
+    int16_t tx = kCx + side * 74, ty = 4 + d;
+    canvas->fillTriangle(b1x, b1y, b2x, b2y, tx, ty, yellow);
+    int16_t p1x = tx + (b1x - tx) * 35 / 100, p1y = ty + (b1y - ty) * 35 / 100;
+    int16_t p2x = tx + (b2x - tx) * 35 / 100, p2y = ty + (b2y - ty) * 35 / 100;
+    canvas->fillTriangle(tx, ty, p1x, p1y, p2x, p2y, tip);
+  }
+
+  // Head.
+  canvas->fillEllipse(kCx, 110 + d, 60, 48, yellow);
+
+  // Eyes with highlights.
+  canvas->fillCircle(kCx - 24, 102 + d, 9, ink);
+  canvas->fillCircle(kCx + 24, 102 + d, 9, ink);
+  canvas->fillCircle(kCx - 21, 98 + d, 3, ST77XX_WHITE);
+  canvas->fillCircle(kCx + 27, 98 + d, 3, ST77XX_WHITE);
+  // Nose and a little w mouth.
+  canvas->fillTriangle(kCx - 3, 112 + d, kCx + 3, 112 + d, kCx, 115 + d, ink);
+  canvas->drawLine(kCx - 10, 120 + d, kCx - 5, 125 + d, ink);
+  canvas->drawLine(kCx - 5, 125 + d, kCx, 120 + d, ink);
+  canvas->drawLine(kCx, 120 + d, kCx + 5, 125 + d, ink);
+  canvas->drawLine(kCx + 5, 125 + d, kCx + 10, 120 + d, ink);
+
+  // Cheeks crackle: flicker brighter while it is up.
+  bool up = p >= 300 && p < 760;
+  bool zap = up && ((p / 40) % 2 == 0);
+  canvas->fillCircle(kCx - 40, 120 + d, 11, zap ? rgb(255, 90, 90) : cheek);
+  canvas->fillCircle(kCx + 40, 120 + d, 11, zap ? rgb(255, 90, 90) : cheek);
+
+  // Lightning bolts on both sides, flashing white and yellow.
+  if (up) {
+    uint16_t c = zap ? ST77XX_WHITE : yellow;
+    bolt(22, 26, c);
+    bolt(218, 26, c);
+    if (zap) {
+      bolt(40, 96, yellow);
+      bolt(204, 96, yellow);
+    }
+  }
+}
+
 // Easter egg: a sleepy giant rises from the bottom edge, snoozes a beat, sinks.
 static void drawEgg(uint16_t p)
 {
@@ -216,17 +306,7 @@ static void drawEgg(uint16_t p)
   const uint16_t cream = rgb(240, 226, 190);
   const uint16_t ink = rgb(20, 30, 36);
 
-  // 0 = fully up; kAnimH = fully below the bottom edge.
-  float y;
-  if (p < 300) {
-    y = kAnimH * (1.0f - easeOut(phase(p, 0, 300)));
-  } else if (p < 720) {
-    y = 2.0f * sinf(phase(p, 300, 720) * 6.2832f * 1.5f);  // slow breathing
-  } else {
-    float t = phase(p, 720, 1000);
-    y = kAnimH * t * t;
-  }
-  int16_t d = static_cast<int16_t>(y);
+  int16_t d = popOffset(p, 2.0f * sinf(phase(p, 300, 720) * 6.2832f * 1.5f));  // slow breathing
 
   // Arms, body, belly.
   canvas->fillEllipse(30, 168 + d, 26, 40, fur);
@@ -292,6 +372,8 @@ bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
     drawSpin(progress);
   } else if (kind == PP_ANIM_EGG) {
     drawEgg(progress);
+  } else if (kind == PP_ANIM_READY) {
+    drawReady(progress);
   }
   tft.drawRGBBitmap(kAnimX, kAnimY, canvas->getBuffer(), kAnimW, kAnimH);
   return true;

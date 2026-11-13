@@ -20,7 +20,8 @@ enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_POKEMON_FULL,  // derived: full signal that followed a Pokemon alert
   PP_FEEDBACK_BAG_FULL,      // derived: full signal that followed a Pokestop alert
   PP_FEEDBACK_STOP_PASSED,   // Pokestop left range without a spin (10 FF FF after in range)
-  PP_FEEDBACK_UNKNOWN_SINGLE
+  PP_FEEDBACK_UNKNOWN_SINGLE,
+  PP_FEEDBACK_READY          // GO handshake finished (first pair or reconnect); appended to keep numbering
 };
 
 // Battery percent from cell voltage, interpolated on a typical LiPo discharge curve.

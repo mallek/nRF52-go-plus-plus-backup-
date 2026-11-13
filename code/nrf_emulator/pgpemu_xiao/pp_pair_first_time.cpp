@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "pp_auth_protocol.h"
+#include "pp_feedback.h"
 #include "pp_pair_first_time.h"
 #include "pp_service_d_protocol.h"
 
@@ -84,6 +85,7 @@ void ppMarkAuthComplete(const FirstPairRuntimeRefs& refs)
   refs.setFirstPairCertState(CERT_STATE_AUTH_COMPLETE, "markAuthComplete");
   refs.savePersistentPairState("markAuthComplete");
   Serial.println("Pair stage -> authenticated");
+  ppFeedbackPost(PP_FEEDBACK_READY);
   Serial.print("First-pair real 36 seen=");
   Serial.print(*refs.firstPairSawReal36 ? "true" : "false");
   Serial.print(" real 28 seen=");
