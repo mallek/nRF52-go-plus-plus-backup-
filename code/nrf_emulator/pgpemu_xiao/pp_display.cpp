@@ -15,6 +15,8 @@ namespace {
 static constexpr uint32_t kComboHoldMs = 1500;
 static constexpr uint32_t kMenuTimeoutMs = 20000;
 static constexpr uint32_t kBacklightTimeoutMs = 60000;
+// A catch, flee, spin or connect lights a dark screen this long so the result is visible.
+static constexpr uint32_t kEventWakeMs = 10000;
 static constexpr uint32_t kDebounceMs = 30;
 
 static constexpr uint16_t kBg = ST77XX_BLACK;
@@ -47,7 +49,7 @@ static bool waitForRelease = false;
 static uint8_t menuIndex = 0;
 static uint32_t menuActivityAt = 0;
 static bool backlightOn = true;
-static uint32_t backlightActivityAt = 0;
+static uint32_t backlightUntil = 0;
 
 static bool connected = false;
 static uint16_t caught = 0;
@@ -80,9 +82,12 @@ static void setBacklight(bool on)
   digitalWrite(PIN_TFT_LITE, on ? HIGH : LOW);
 }
 
-static void touchBacklight(uint32_t now)
+static void touchBacklight(uint32_t now, uint32_t forMs = kBacklightTimeoutMs)
 {
-  backlightActivityAt = now;
+  uint32_t until = now + forMs;
+  if (!backlightOn || static_cast<int32_t>(until - backlightUntil) > 0) {
+    backlightUntil = until;
+  }
   setBacklight(true);
 }
 
@@ -238,7 +243,7 @@ void ppDisplayBegin()
   tft.setRotation(1);
   tft.setTextWrap(false);
   started = true;
-  backlightActivityAt = millis();
+  backlightUntil = millis() + kBacklightTimeoutMs;
   drawStatusFrame();
   drawStatusLines();
   Serial.println("Display: ST7789 up");
@@ -282,7 +287,7 @@ void ppDisplayUpdate()
   if (mode == MODE_STATUS && statusDirty) {
     drawStatusLines();
   }
-  if (backlightOn && now - backlightActivityAt >= kBacklightTimeoutMs) {
+  if (backlightOn && static_cast<int32_t>(now - backlightUntil) >= 0) {
     setBacklight(false);
   }
 }
@@ -334,6 +339,9 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     }
   }
   statusDirty = true;
+  if (started) {
+    touchBacklight(millis(), kEventWakeMs);
+  }
 }
 
 void ppDisplayOnFactoryReset()
