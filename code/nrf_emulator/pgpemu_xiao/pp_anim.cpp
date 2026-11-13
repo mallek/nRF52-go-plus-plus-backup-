@@ -63,42 +63,104 @@ static void sparkle(int16_t x, int16_t y, int16_t s, uint16_t color)
   canvas->fillCircle(x, y, 1, color);
 }
 
-// Ball drops in open, snaps shut, button flashes, stars rise and fade.
+static float easeOutQuad(float t)
+{
+  float u = 1.0f - t;
+  return 1.0f - u * u;
+}
+
+// Rotates (x, y) about hinge (hx, hy) by `a` radians (screen coords, y down).
+static void rotateAbout(float hx, float hy, float a, float& x, float& y)
+{
+  float dx = x - hx;
+  float dy = y - hy;
+  float c = cosf(a);
+  float sn = sinf(a);
+  x = hx + dx * c - dy * sn;
+  y = hy + dx * sn + dy * c;
+}
+
+// Ball lid: upper half-disc whose flat edge sits on y = cy, hinged at its right
+// end and lifted `a` radians, with the black seam stripe along the flat edge.
+static void lid(int16_t cx, int16_t cy, int16_t r, float a, uint16_t color)
+{
+  static constexpr uint8_t kSteps = 20;
+  float hx = cx + r;
+  float hy = cy;
+  float ox = cx;
+  float oy = cy;
+  rotateAbout(hx, hy, a, ox, oy);
+  float px = cx + r;
+  float py = cy;
+  rotateAbout(hx, hy, a, px, py);
+  for (uint8_t i = 1; i <= kSteps; ++i) {
+    float t = 3.14159f * i / kSteps;
+    float qx = cx + r * cosf(t);
+    float qy = cy - r * sinf(t);
+    rotateAbout(hx, hy, a, qx, qy);
+    canvas->fillTriangle(static_cast<int16_t>(ox), static_cast<int16_t>(oy),
+                         static_cast<int16_t>(px), static_cast<int16_t>(py),
+                         static_cast<int16_t>(qx), static_cast<int16_t>(qy), color);
+    px = qx;
+    py = qy;
+  }
+  // Seam stripe: a 4 px band under the flat edge, rotated with the lid.
+  float x0 = cx - r, y0 = cy;
+  float x1 = cx + r, y1 = cy;
+  float x2 = cx + r, y2 = cy + 4;
+  float x3 = cx - r, y3 = cy + 4;
+  rotateAbout(hx, hy, a, x0, y0);
+  rotateAbout(hx, hy, a, x1, y1);
+  rotateAbout(hx, hy, a, x2, y2);
+  rotateAbout(hx, hy, a, x3, y3);
+  canvas->fillTriangle(x0, y0, x1, y1, x2, y2, ST77XX_BLACK);
+  canvas->fillTriangle(x0, y0, x2, y2, x3, y3, ST77XX_BLACK);
+}
+
+// Ball drops in with the lid open, the lid snaps shut, the button flashes, then
+// big sparkles rise above it, hold, and fade.
 static void drawCatch(uint16_t p)
 {
-  static constexpr int16_t r = 40;
-  static constexpr int16_t restY = 100;
-  static constexpr int16_t openGap = 22;
+  static constexpr int16_t r = 42;
+  static constexpr int16_t restY = 112;
+  static constexpr float kOpenAngle = 0.85f;   // lid lifted on the left, hinge right
 
   float fall = easeOut(phase(p, 0, 250));
-  float close = phase(p, 250, 450);
+  float close = phase(p, 250, 420);
   int16_t cy = static_cast<int16_t>(-r + (restY + r) * fall);
-  int16_t gap = static_cast<int16_t>(openGap * (1.0f - close * close));
+  float angle = kOpenAngle * (1.0f - close * close);
 
   // A small settle bounce right after it closes.
-  if (p >= 450 && p < 550) {
-    float b = phase(p, 450, 550);
-    cy += static_cast<int16_t>(4.0f * sinf(b * 3.14159f));
+  if (p >= 420 && p < 520) {
+    float b = phase(p, 420, 520);
+    cy -= static_cast<int16_t>(5.0f * sinf(b * 3.14159f));
   }
 
   halfDisc(kCenter, cy, r, false, ST77XX_WHITE);
-  halfDisc(kCenter, cy - gap, r, true, rgb(230, 30, 30));
-  // Seam band and button.
-  canvas->fillRect(kCenter - r, cy - gap - 2, 2 * r + 1, gap + 5, ST77XX_BLACK);
-  bool flash = (p >= 450 && p < 550) && ((p / 25) % 2 == 0);
-  canvas->fillCircle(kCenter, cy - gap / 2, 11, ST77XX_BLACK);
-  canvas->fillCircle(kCenter, cy - gap / 2, 7, flash ? rgb(255, 230, 60) : ST77XX_WHITE);
+  lid(kCenter, cy - 4, r, angle, rgb(230, 30, 30));
+  canvas->fillRect(kCenter - r, cy - 1, 2 * r + 1, 2, ST77XX_BLACK);
+  bool flash = (p >= 420 && p < 540) && ((p / 30) % 2 == 0);
+  if (close >= 1.0f) {
+    canvas->fillCircle(kCenter, cy - 2, 12, ST77XX_BLACK);
+    canvas->fillCircle(kCenter, cy - 2, 8, flash ? rgb(255, 230, 60) : ST77XX_WHITE);
+  }
 
-  if (p >= 550) {
-    float t = phase(p, 550, 1000);
-    uint8_t level = static_cast<uint8_t>(255.0f * (1.0f - t * t));
-    uint16_t color = dim(255, 220, 40, level);
-    static const int16_t xs[4] = { -34, -11, 13, 36 };
-    static const int16_t rise[4] = { 44, 58, 52, 40 };
+  if (p >= 480) {
+    float t = phase(p, 480, 1000);
+    float fade = t < 0.6f ? 1.0f : 1.0f - (t - 0.6f) / 0.4f;
+    uint8_t level = static_cast<uint8_t>(255.0f * fade);
+    uint16_t gold = dim(255, 215, 30, level);
+    uint16_t core = dim(255, 255, 220, level);
+    static const int16_t xs[4] = { -40, -14, 14, 40 };
+    static const int16_t rise[4] = { 30, 44, 40, 28 };
+    static const int16_t size[4] = { 9, 12, 11, 9 };
     for (uint8_t i = 0; i < 4; ++i) {
-      int16_t x = kCenter + xs[i] + static_cast<int16_t>(6.0f * sinf(t * 6.0f + i));
-      int16_t y = restY - r - 8 - static_cast<int16_t>(rise[i] * easeOut(t));
-      sparkle(x, y, (i % 2) ? 5 : 7, color);
+      int16_t x = kCenter + xs[i] + static_cast<int16_t>(4.0f * sinf(t * 7.0f + i * 1.7f));
+      int16_t y = restY - r - 12 - static_cast<int16_t>(rise[i] * easeOut(t));
+      // Twinkle: size pulses a little.
+      int16_t s = size[i] + static_cast<int16_t>(2.0f * sinf(t * 18.0f + i));
+      sparkle(x, y, s, gold);
+      canvas->fillCircle(x, y, 2, core);
     }
   }
 }
@@ -106,11 +168,13 @@ static void drawCatch(uint16_t p)
 // Disk flips like a tossed coin, slows to face-on, then item sparks burst out.
 static void drawSpin(uint16_t p)
 {
-  static constexpr int16_t r = 52;
-  static constexpr float kHalfTurns = 7.0f;
+  static constexpr int16_t r = 54;
+  // 3 half-turns with a gentle ease: the fastest frame steps about 0.55 rad,
+  // slow enough at 20 fps to read as a spin instead of flicker.
+  static constexpr float kHalfTurns = 3.0f;
 
-  float u = phase(p, 0, 800);
-  float theta = kHalfTurns * 3.14159f * easeOut(u);
+  float u = phase(p, 0, 820);
+  float theta = kHalfTurns * 3.14159f * easeOutQuad(u);
   int16_t w = static_cast<int16_t>(fabsf(cosf(theta)) * r);
   if (w < 2) {
     w = 2;
@@ -127,17 +191,17 @@ static void drawSpin(uint16_t p)
 
   if (p >= 800) {
     float t = phase(p, 800, 1000);
-    uint8_t level = static_cast<uint8_t>(255.0f * (1.0f - t));
+    uint8_t level = static_cast<uint8_t>(255.0f * (1.0f - t * t));
     static const uint8_t colors[6][3] = {
       { 200, 80, 255 }, { 60, 230, 90 }, { 255, 220, 40 },
       { 255, 90, 90 },  { 90, 220, 255 }, { 255, 160, 40 }
     };
     for (uint8_t i = 0; i < 6; ++i) {
       float a = i * (3.14159f / 3.0f) + 0.5f;
-      float dist = r + 6 + 26 * easeOut(t);
+      float dist = r + 4 + 20 * easeOut(t);
       int16_t x = kCenter + static_cast<int16_t>(cosf(a) * dist);
       int16_t y = kCenter + static_cast<int16_t>(sinf(a) * dist);
-      canvas->fillCircle(x, y, 4, dim(colors[i][0], colors[i][1], colors[i][2], level));
+      canvas->fillCircle(x, y, 5, dim(colors[i][0], colors[i][1], colors[i][2], level));
     }
   }
 }
