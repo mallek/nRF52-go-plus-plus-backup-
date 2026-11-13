@@ -4,6 +4,9 @@
 #include <InternalFileSystem.h>
 #include "pp_app_lifecycle.h"
 #include "pp_auth_bootstrap.h"
+#include "pp_board.h"
+#include "pp_display.h"
+#include "pp_identity.h"
 #include "pp_auth_material.h"
 #include "pp_auth_blob.h"
 #include "pp_ble_dispatch.h"
@@ -66,8 +69,8 @@ static constexpr uint8_t RUNTIME_BUTTON_IDLE_COUNT_BEFORE_ACTION = 10;
 static constexpr uint8_t RUNTIME_BUTTON_PRESTATE_SEND_COUNT = 3;
 static constexpr uint32_t RUNTIME_BUTTON_PRESTATE_SEND_GAP_MS = 15;
 static constexpr uint32_t POST_AUTH_READY_18_DELAY_MS = 20300;
-// XIAO nRF52840: P0.17 is the charger CHG line (low while charging) - using D1 (P0.03) instead.
-static constexpr uint32_t PHYSICAL_RESET_BUTTON_RAW_PIN = NRF_GPIO_PIN_MAP(0, 3);
+// Board-specific reset input (XIAO: D1 to GND, CLUE: button A). See pp_board.h.
+static const uint32_t PHYSICAL_RESET_BUTTON_RAW_PIN = ppRawPin(PP_RESET_BUTTON_ARDUINO_PIN);
 static constexpr uint32_t PHYSICAL_RESET_BUTTON_HOLD_MS = 5000;
 static constexpr uint32_t DISCONNECTED_SLEEP_TIMEOUT_MS = 15UL * 60UL * 1000UL;
 DebugBLEService serviceA("addc3e26-4aa5-4c1a-8a6a-735db4e01c6c");
@@ -257,13 +260,17 @@ static void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 
 void setup()
 {
+  // Identity first: the auth blob seeding and the BLE address both read it.
+  ppIdentityBegin();
   ppRunBootSequence(makeAppBootRefs());
   ppFeedbackBegin();
+  ppDisplayBegin();
 }
 
 void loop()
 {
   ppRunMainLoopTick(makeAppLoopRefs());
   ppFeedbackUpdate();
+  ppDisplayUpdate();
 }
 

@@ -1,6 +1,8 @@
 #include <Arduino.h>
 
 #include "pp_feedback.h"
+#include "pp_board.h"
+#include "pp_display.h"
 #include "pp_feedback_battery.h"
 #include "pp_feedback_led.h"
 #include "pp_feedback_log.h"
@@ -49,7 +51,11 @@ void ppFeedbackBegin()
   ppFeedbackLogBegin();
   ppFullStateInit(fullState);
   started = true;
-  Serial.println("Feedback: ring D7, status light on");
+  Serial.print("Feedback: board ");
+  Serial.print(PP_BOARD_NAME);
+  Serial.print(", ");
+  Serial.print(PP_LED_PHYSICAL_COUNT);
+  Serial.println(" pixel(s)");
 }
 
 void ppFeedbackPost(PpFeedbackEvent event)
@@ -125,6 +131,7 @@ void ppFeedbackUpdate()
     }
     ppFeedbackLedSetFull(fullState.pokemonFull, fullState.bagFull);
     ppFeedbackLedPlayEvent(shown, now);
+    ppDisplayOnEvent(shown);
   }
 
   ppFeedbackLedUpdate(now);

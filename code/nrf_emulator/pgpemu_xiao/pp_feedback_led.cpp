@@ -1,11 +1,15 @@
 #include <Adafruit_NeoPixel.h>
 
+#include "pp_board.h"
 #include "pp_feedback_led.h"
 
 namespace {
 
-static constexpr uint8_t kRingPin = D7;
+// The effects are authored for a 7-pixel ring. Boards with fewer pixels (CLUE: one)
+// render the same 7-pixel frame and collapse it in render().
+static constexpr uint8_t kRingPin = PP_LED_PIN;
 static constexpr uint8_t kRingCount = 7;
+static constexpr uint8_t kPhysicalCount = PP_LED_PHYSICAL_COUNT;
 static constexpr uint8_t kCenterIndex = 0;      // most 7-LED jewels put pixel 0 in the middle
 static constexpr uint8_t kFirstOuterIndex = 1;  // outer pixels 1..6
 static constexpr uint8_t kBrightness = 40;      // 7 px at full white would be ~420 mA on 3V3
@@ -32,7 +36,7 @@ struct Effect {
   uint16_t totalMs;   // OUTER_CHASE: duration
 };
 
-static Adafruit_NeoPixel ring(kRingCount, kRingPin, NEO_GRB + NEO_KHZ800);
+static Adafruit_NeoPixel ring(kPhysicalCount, kRingPin, NEO_GRB + NEO_KHZ800);
 
 static PpStatusLight status = PP_STATUS_OFF;
 static bool pokemonFullWarning = false;
@@ -202,8 +206,19 @@ static void render(uint32_t nowMs)
     return;
   }
   for (uint8_t i = 0; i < kRingCount; ++i) {
-    ring.setPixelColor(i, frame[i]);
     lastShown[i] = frame[i];
+  }
+  if (kPhysicalCount >= kRingCount) {
+    for (uint8_t i = 0; i < kRingCount; ++i) {
+      ring.setPixelColor(i, frame[i]);
+    }
+  } else {
+    // Single pixel: an outer-ring effect wins over the center status light.
+    uint32_t shown = frame[kCenterIndex];
+    if (frame[kFirstOuterIndex] != 0) {
+      shown = frame[kFirstOuterIndex];
+    }
+    ring.setPixelColor(0, shown);
   }
   ring.show();
   forceShow = false;

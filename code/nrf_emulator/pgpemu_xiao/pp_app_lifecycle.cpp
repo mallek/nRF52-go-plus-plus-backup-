@@ -4,6 +4,7 @@
 #include <nrf_soc.h>
 
 #include "pp_app_lifecycle.h"
+#include "pp_display.h"
 #include "pp_feedback.h"
 #include "pp_sleep_export.h"
 
@@ -38,6 +39,7 @@ static void enterDisconnectedSystemOff(const AppLifecycleRefs& refs)
   Serial.print(refs.physicalResetButtonRawPin);
   Serial.println(") low sense");
   ppFeedbackShutdown();
+  ppDisplayShutdown();
   Serial.flush();
   delay(20);
 
@@ -78,6 +80,7 @@ void ppResetPairingFromApp(const AppLifecycleRefs& refs, const char* reason)
 void ppResetPairingFromPhysicalButton(const AppLifecycleRefs& refs, const char* reason)
 {
   resetPairingCommon(refs, "Physical hold pairing reset via ", reason);
+  ppDisplayOnFactoryReset();
 }
 
 void ppDisarmDisconnectedSleepTimer(const AppLifecycleRefs& refs)
@@ -116,7 +119,9 @@ void ppProcessDisconnectedSleepIfNeeded(const AppLifecycleRefs& refs)
 
 void ppProcessPhysicalResetButtonIfNeeded(const AppLifecycleRefs& refs)
 {
-  bool pressed = (nrf_gpio_pin_read(refs.physicalResetButtonRawPin) == 0);
+  // The CLUE menu / A+B gesture shares button A; while it owns the buttons the
+  // hold-to-reset reads as released.
+  bool pressed = (nrf_gpio_pin_read(refs.physicalResetButtonRawPin) == 0) && !ppUiOwnsButtons();
   uint32_t now = millis();
 
   if (pressed && !*refs.physicalResetButtonActive) {
@@ -155,7 +160,7 @@ void ppProcessPhysicalResetButtonIfNeeded(const AppLifecycleRefs& refs)
     *refs.physicalResetButtonTriggered = true;
     Serial.print("Physical reset button held for full threshold ms=");
     Serial.println(now - *refs.physicalResetButtonPressedAt);
-    ppResetPairingFromPhysicalButton(refs, "pin 17 hold");
+    ppResetPairingFromPhysicalButton(refs, "reset button hold");
   }
 }
 

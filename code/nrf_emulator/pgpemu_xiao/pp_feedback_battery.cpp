@@ -1,8 +1,11 @@
 #include <Arduino.h>
 #include <nrf_soc.h>
 
+#include "pp_board.h"
 #include "pp_feedback_battery.h"
 #include "pp_feedback_logic.h"
+
+#if PP_HAS_BATTERY_GAUGE
 
 namespace {
 
@@ -78,3 +81,25 @@ const PpBatteryState& ppFeedbackBatteryState()
 {
   return state;
 }
+
+#else
+
+// No battery gauge on this board (CLUE runs on USB power): never reports a sample,
+// so the status light stays dark and no fully-charged event fires.
+namespace {
+static PpBatteryState state = { 0, 100, false, true };
+}  // namespace
+
+void ppFeedbackBatteryBegin() {}
+
+bool ppFeedbackBatteryUpdate(uint32_t)
+{
+  return false;
+}
+
+const PpBatteryState& ppFeedbackBatteryState()
+{
+  return state;
+}
+
+#endif

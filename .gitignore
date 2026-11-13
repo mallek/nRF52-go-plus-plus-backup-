@@ -16,3 +16,6 @@ __pycache__/
 **/pp_device_material.generated.h
 *.bak
 **/build/
+
+# Multi-identity table generated from dumps (cert, key, MAC) - never commit
+**/pp_identities.generated.h

@@ -2,11 +2,7 @@
 
 #include <stdint.h>
 
-#if __has_include("pp_device_material.h")
-#include "pp_device_material.h"
-#else
-#error "Missing pp_device_material.h. Generate it with tools/flash_image_reader or copy pp_device_material.template.h and fill in your own device material."
-#endif
+#include "pp_identity.h"
 
 extern const uint8_t PLUSPLUS_SERVICE_DATA_32[4];
 extern const uint8_t PLUSPLUS_AUTH_CTRL_REPLY_2401[5];
