@@ -7,7 +7,9 @@
 
 namespace {
 
-static constexpr int16_t kCenter = kAnimSize / 2;
+// Panel center (120, 120) in canvas coordinates.
+static constexpr int16_t kCx = 120;
+static constexpr int16_t kCy = 80;
 
 static GFXcanvas16* canvas = nullptr;
 
@@ -136,13 +138,13 @@ static void drawCatch(uint16_t p)
     cy -= static_cast<int16_t>(5.0f * sinf(b * 3.14159f));
   }
 
-  halfDisc(kCenter, cy, r, false, ST77XX_WHITE);
-  lid(kCenter, cy - 4, r, angle, rgb(230, 30, 30));
-  canvas->fillRect(kCenter - r, cy - 1, 2 * r + 1, 2, ST77XX_BLACK);
+  halfDisc(kCx, cy, r, false, ST77XX_WHITE);
+  lid(kCx, cy - 4, r, angle, rgb(230, 30, 30));
+  canvas->fillRect(kCx - r, cy - 1, 2 * r + 1, 2, ST77XX_BLACK);
   bool flash = (p >= 420 && p < 540) && ((p / 30) % 2 == 0);
   if (close >= 1.0f) {
-    canvas->fillCircle(kCenter, cy - 2, 12, ST77XX_BLACK);
-    canvas->fillCircle(kCenter, cy - 2, 8, flash ? rgb(255, 230, 60) : ST77XX_WHITE);
+    canvas->fillCircle(kCx, cy - 2, 12, ST77XX_BLACK);
+    canvas->fillCircle(kCx, cy - 2, 8, flash ? rgb(255, 230, 60) : ST77XX_WHITE);
   }
 
   if (p >= 480) {
@@ -155,7 +157,7 @@ static void drawCatch(uint16_t p)
     static const int16_t rise[4] = { 30, 44, 40, 28 };
     static const int16_t size[4] = { 9, 12, 11, 9 };
     for (uint8_t i = 0; i < 4; ++i) {
-      int16_t x = kCenter + xs[i] + static_cast<int16_t>(4.0f * sinf(t * 7.0f + i * 1.7f));
+      int16_t x = kCx + xs[i] + static_cast<int16_t>(4.0f * sinf(t * 7.0f + i * 1.7f));
       int16_t y = restY - r - 12 - static_cast<int16_t>(rise[i] * easeOut(t));
       // Twinkle: size pulses a little.
       int16_t s = size[i] + static_cast<int16_t>(2.0f * sinf(t * 18.0f + i));
@@ -180,14 +182,14 @@ static void drawSpin(uint16_t p)
     w = 2;
   }
 
-  canvas->fillEllipse(kCenter, kCenter, w, r, rgb(30, 110, 230));
-  canvas->drawEllipse(kCenter, kCenter, w, r, rgb(140, 200, 255));
+  canvas->fillEllipse(kCx, kCy, w, r, rgb(30, 110, 230));
+  canvas->drawEllipse(kCx, kCy, w, r, rgb(140, 200, 255));
   // Lighter center band so the flip reads as a disk, not a blob.
   int16_t bw = static_cast<int16_t>(w * 0.55f);
   if (bw > 0) {
-    canvas->fillEllipse(kCenter, kCenter, bw, static_cast<int16_t>(r * 0.55f), rgb(120, 190, 255));
+    canvas->fillEllipse(kCx, kCy, bw, static_cast<int16_t>(r * 0.55f), rgb(120, 190, 255));
   }
-  canvas->fillRect(kCenter - w, kCenter - 3, 2 * w + 1, 7, rgb(20, 70, 160));
+  canvas->fillRect(kCx - w, kCy - 3, 2 * w + 1, 7, rgb(20, 70, 160));
 
   if (p >= 800) {
     float t = phase(p, 800, 1000);
@@ -199,9 +201,76 @@ static void drawSpin(uint16_t p)
     for (uint8_t i = 0; i < 6; ++i) {
       float a = i * (3.14159f / 3.0f) + 0.5f;
       float dist = r + 4 + 20 * easeOut(t);
-      int16_t x = kCenter + static_cast<int16_t>(cosf(a) * dist);
-      int16_t y = kCenter + static_cast<int16_t>(sinf(a) * dist);
+      int16_t x = kCx + static_cast<int16_t>(cosf(a) * dist);
+      int16_t y = kCy + static_cast<int16_t>(sinf(a) * dist);
       canvas->fillCircle(x, y, 5, dim(colors[i][0], colors[i][1], colors[i][2], level));
+    }
+  }
+}
+
+// Easter egg: a sleepy giant rises from the bottom edge, snoozes a beat, sinks.
+static void drawEgg(uint16_t p)
+{
+  const uint16_t fur = rgb(38, 92, 112);
+  const uint16_t furDark = rgb(24, 62, 78);
+  const uint16_t cream = rgb(240, 226, 190);
+  const uint16_t ink = rgb(20, 30, 36);
+
+  // 0 = fully up; kAnimH = fully below the bottom edge.
+  float y;
+  if (p < 300) {
+    y = kAnimH * (1.0f - easeOut(phase(p, 0, 300)));
+  } else if (p < 720) {
+    y = 2.0f * sinf(phase(p, 300, 720) * 6.2832f * 1.5f);  // slow breathing
+  } else {
+    float t = phase(p, 720, 1000);
+    y = kAnimH * t * t;
+  }
+  int16_t d = static_cast<int16_t>(y);
+
+  // Arms, body, belly.
+  canvas->fillEllipse(30, 168 + d, 26, 40, fur);
+  canvas->fillEllipse(210, 168 + d, 26, 40, fur);
+  canvas->fillEllipse(kCx, 190 + d, 92, 84, fur);
+  canvas->fillEllipse(kCx, 200 + d, 70, 66, cream);
+
+  // Ears, then head.
+  canvas->fillTriangle(72, 62 + d, 80, 22 + d, 104, 48 + d, fur);
+  canvas->fillTriangle(168, 62 + d, 160, 22 + d, 136, 48 + d, fur);
+  canvas->fillTriangle(80, 34 + d, 84, 28 + d, 92, 44 + d, furDark);
+  canvas->fillTriangle(160, 34 + d, 156, 28 + d, 148, 44 + d, furDark);
+  canvas->fillEllipse(kCx, 84 + d, 58, 48, fur);
+
+  // Face patch with the pointed hairline.
+  canvas->fillEllipse(kCx, 98 + d, 44, 32, cream);
+  canvas->fillTriangle(kCx - 16, 66 + d, kCx + 16, 66 + d, kCx, 82 + d, fur);
+
+  // Closed eyes, two pixels thick.
+  for (int16_t k = 0; k < 2; ++k) {
+    canvas->drawFastHLine(kCx - 30, 92 + d + k, 18, ink);
+    canvas->drawFastHLine(kCx + 12, 92 + d + k, 18, ink);
+  }
+  // Content little mouth with two tiny teeth.
+  canvas->drawLine(kCx - 12, 110 + d, kCx, 114 + d, ink);
+  canvas->drawLine(kCx, 114 + d, kCx + 12, 110 + d, ink);
+  canvas->fillTriangle(kCx - 9, 110 + d, kCx - 5, 110 + d, kCx - 7, 106 + d, ST77XX_WHITE);
+  canvas->fillTriangle(kCx + 5, 110 + d, kCx + 9, 110 + d, kCx + 7, 106 + d, ST77XX_WHITE);
+
+  // Zzz drifting up while it is up.
+  if (p >= 300 && p < 760) {
+    float t = phase(p, 300, 760);
+    canvas->setTextColor(ST77XX_WHITE);
+    canvas->setTextWrap(false);
+    static const int16_t zx[3] = { 172, 188, 204 };
+    static const int16_t zy[3] = { 52, 30, 8 };
+    static const uint8_t zs[3] = { 2, 3, 4 };
+    for (uint8_t i = 0; i < 3; ++i) {
+      // Each z appears in turn.
+      if (t * 3.0f >= i) {
+        canvas->setTextSize(zs[i]);
+        canvas->setCursor(zx[i], zy[i] + d - static_cast<int16_t>(6.0f * t));
+        canvas->print("z");
+      }
     }
   }
 }
@@ -211,7 +280,7 @@ static void drawSpin(uint16_t p)
 bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
 {
   if (canvas == nullptr) {
-    canvas = new GFXcanvas16(kAnimSize, kAnimSize);
+    canvas = new GFXcanvas16(kAnimW, kAnimH);
   }
   if (canvas == nullptr || canvas->getBuffer() == nullptr) {
     return false;
@@ -221,8 +290,10 @@ bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
     drawCatch(progress);
   } else if (kind == PP_ANIM_SPIN) {
     drawSpin(progress);
+  } else if (kind == PP_ANIM_EGG) {
+    drawEgg(progress);
   }
-  tft.drawRGBBitmap(kAnimOrigin, kAnimOrigin, canvas->getBuffer(), kAnimSize, kAnimSize);
+  tft.drawRGBBitmap(kAnimX, kAnimY, canvas->getBuffer(), kAnimW, kAnimH);
   return true;
 }
 

@@ -58,12 +58,45 @@ static void testEventMap()
   CHECK(ppAnimKindForEvent(PP_FEEDBACK_CONNECTED) == PP_ANIM_NONE);
 }
 
+static void testEggDuration()
+{
+  CHECK(ppAnimDurationMs(PP_ANIM_CATCH) == 2000);
+  CHECK(ppAnimDurationMs(PP_ANIM_SPIN) == 2000);
+  CHECK(ppAnimDurationMs(PP_ANIM_EGG) == 2500);
+  PpAnimState s = { PP_ANIM_NONE, 0 };
+  ppAnimStart(s, PP_ANIM_EGG, 1000);
+  CHECK(ppAnimProgress(s, 2250) == 500);
+  CHECK(!ppAnimDone(s, 3000));
+  CHECK(!ppAnimDone(s, 3499));
+  CHECK(ppAnimDone(s, 3500));
+}
+
+static void testTapCounter()
+{
+  PpTapCounter t = { 0, 0 };
+  CHECK(!ppTapCounterTap(t, 100));
+  CHECK(!ppTapCounterTap(t, 300));
+  CHECK(!ppTapCounterTap(t, 500));
+  CHECK(!ppTapCounterTap(t, 700));
+  CHECK(ppTapCounterTap(t, 900));    // fifth tap inside 2 s fires
+  CHECK(t.count == 0);               // and resets
+  // Too slow: the window restarts at the tap that fell outside it.
+  CHECK(!ppTapCounterTap(t, 10000));
+  CHECK(!ppTapCounterTap(t, 10500));
+  CHECK(!ppTapCounterTap(t, 11000));
+  CHECK(!ppTapCounterTap(t, 11500));
+  CHECK(!ppTapCounterTap(t, 12100)); // 5th tap, but 2.1 s after the first
+  CHECK(t.count == 1);
+}
+
 int main()
 {
   testProgress();
   testWrap();
   testRestart();
   testEventMap();
+  testEggDuration();
+  testTapCounter();
   if (failures == 0) {
     std::printf("anim_logic: all passed\n");
     return 0;
