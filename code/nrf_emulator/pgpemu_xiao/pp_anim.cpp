@@ -4,6 +4,9 @@
 
 #include <Adafruit_GFX.h>
 #include <math.h>
+#include <string.h>
+
+#include "pp_identity.h"
 
 namespace {
 
@@ -355,6 +358,95 @@ static void drawEgg(uint16_t p)
   }
 }
 
+static void canvasText(const char* text, int16_t y, uint8_t size, uint16_t color)
+{
+  canvas->setTextSize(size);
+  canvas->setTextColor(color);
+  canvas->setTextWrap(false);
+  canvas->setCursor((kAnimW - static_cast<int16_t>(strlen(text) * 6 * size)) / 2, y);
+  canvas->print(text);
+}
+
+// Ball with its lid lifted `angle` radians; the button shows when shut.
+static void ball(int16_t cx, int16_t cy, int16_t r, float angle)
+{
+  halfDisc(cx, cy, r, false, ST77XX_WHITE);
+  lid(cx, cy - 4, r, angle, rgb(230, 30, 30));
+  canvas->fillRect(cx - r, cy - 1, 2 * r + 1, 2, ST77XX_BLACK);
+  if (angle <= 0.01f) {
+    canvas->fillCircle(cx, cy - 2, 12, ST77XX_BLACK);
+    canvas->fillCircle(cx, cy - 2, 8, ST77XX_WHITE);
+  }
+}
+
+// Power on: the ball drops in, wiggles, pops open, and the active name rises out.
+static void drawBoot(uint16_t p)
+{
+  static constexpr int16_t r = 40;
+  static constexpr int16_t restY = 138;
+
+  float fall = easeOut(phase(p, 0, 220));
+  int16_t cy = static_cast<int16_t>(-r + (restY + r) * fall);
+  int16_t cx = kCx;
+  if (p >= 240 && p < 430) {
+    float b = phase(p, 240, 430);
+    cx += static_cast<int16_t>(7.0f * sinf(b * 4.0f * 3.14159f) * (1.0f - b));
+  }
+  float open = easeOut(phase(p, 440, 600));
+
+  if (open > 0.0f) {
+    // Light spilling out of the open ball.
+    uint8_t level = static_cast<uint8_t>(255.0f * (1.0f - phase(p, 600, 1000) * 0.45f));
+    canvas->fillCircle(cx, cy - 8, static_cast<int16_t>(14 + 30 * open), dim(255, 200, 40, level));
+    canvas->fillCircle(cx, cy - 8, static_cast<int16_t>(8 + 16 * open), dim(255, 250, 190, level));
+  }
+  ball(cx, cy, r, 0.95f * open);
+
+  float t = phase(p, 520, 820);
+  if (t > 0.0f) {
+    const char* name = ppIdentityName(ppIdentityActive());
+    size_t len = strlen(name);
+    uint8_t size = len <= 6 ? 6 : (len <= 8 ? 4 : 3);
+    int16_t fromY = restY - r - 8 * size;
+    int16_t toY = 12;
+    int16_t y = fromY - static_cast<int16_t>((fromY - toY) * easeOut(t));
+    canvasText(name, y, size, dim(248, 164, 0, static_cast<uint8_t>(255.0f * t)));
+  }
+}
+
+// Factory reset done: a ring flashes out, the ball shakes and pops open empty.
+static void drawReset(uint16_t p)
+{
+  static constexpr int16_t r = 34;
+  static constexpr int16_t cy = 112;
+
+  if (p < 200) {
+    float t = phase(p, 0, 200);
+    int16_t rr = static_cast<int16_t>(20 + 110 * easeOut(t));
+    uint16_t c = dim(255, 255, 255, static_cast<uint8_t>(255.0f * (1.0f - t)));
+    for (int16_t k = 0; k < 4; ++k) {
+      canvas->drawCircle(kCx, cy, rr + k, c);
+    }
+  }
+  int16_t cx = kCx;
+  if (p < 300) {
+    cx += static_cast<int16_t>(6.0f * sinf(phase(p, 0, 300) * 6.0f * 3.14159f));
+  }
+  float open = easeOut(phase(p, 300, 430));
+  ball(cx, cy, r, 0.95f * open);
+
+  if (p >= 300) {
+    // Blinks twice, then stays.
+    bool on = p >= 520 || ((p / 55) % 2 == 0);
+    if (on) {
+      canvasText("RESET DONE", 10, 3, rgb(248, 164, 0));
+    }
+  }
+  if (p >= 430) {
+    canvasText("pair it in GO", 164, 2, ST77XX_WHITE);
+  }
+}
+
 }  // namespace
 
 bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
@@ -374,6 +466,10 @@ bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
     drawEgg(progress);
   } else if (kind == PP_ANIM_READY) {
     drawReady(progress);
+  } else if (kind == PP_ANIM_BOOT) {
+    drawBoot(progress);
+  } else if (kind == PP_ANIM_RESET) {
+    drawReset(progress);
   }
   tft.drawRGBBitmap(kAnimX, kAnimY, canvas->getBuffer(), kAnimW, kAnimH);
   return true;

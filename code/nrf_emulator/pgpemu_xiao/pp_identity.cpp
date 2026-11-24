@@ -22,8 +22,9 @@ uint8_t PLUSPLUS_FACTORY_SELECTOR6[10];
 
 namespace {
 
-// Holds the selected identity's MAC (6 bytes, little-endian). Keyed by MAC, not by
-// index, so a rebuild that reorders the table still finds the right entry.
+// Holds the selected identity's MAC (6 bytes, little-endian) plus the table index it
+// was picked at. Keyed by MAC, so a rebuild that reorders the table still finds the
+// right entry. The index only breaks ties when two entries share one MAC.
 static constexpr char kSelectionPath[] = "/identity.bin";
 // Per-identity generated sleep nights; stale once the identity changes.
 static constexpr char kSleepPolicyPath[] = "/sleep_regen.bin";
@@ -41,18 +42,25 @@ static void load(uint8_t index)
   active = index;
 }
 
-static bool readSelection(uint8_t macLe[6])
+// `index` comes back as 0xff when the file is the older 6-byte form.
+static bool readSelection(uint8_t macLe[6], uint8_t& index)
 {
   File file(InternalFS);
   if (!file.open(kSelectionPath, FILE_O_READ)) {
     return false;
   }
-  int n = file.read(macLe, 6);
+  uint8_t raw[7];
+  int n = file.read(raw, sizeof(raw));
   file.close();
-  return n == 6;
+  if (n < 6) {
+    return false;
+  }
+  memcpy(macLe, raw, 6);
+  index = (n >= 7) ? raw[6] : 0xff;
+  return true;
 }
 
-static void writeSelection(const uint8_t macLe[6])
+static void writeSelection(const uint8_t macLe[6], uint8_t index)
 {
   InternalFS.remove(kSelectionPath);
   File file(InternalFS);
@@ -61,6 +69,7 @@ static void writeSelection(const uint8_t macLe[6])
     return;
   }
   file.write(macLe, 6);
+  file.write(&index, 1);
   file.close();
 }
 
@@ -79,9 +88,14 @@ void ppIdentityBegin()
   InternalFS.begin();
 
   uint8_t saved[6];
-  bool haveSaved = readSelection(saved);
+  uint8_t savedIndex = 0xff;
+  bool haveSaved = readSelection(saved, savedIndex);
   int found = -1;
-  if (haveSaved) {
+  if (haveSaved && savedIndex < PP_IDENTITY_TABLE_COUNT &&
+      memcmp(PP_IDENTITY_TABLE[savedIndex].addrLe, saved, 6) == 0) {
+    found = savedIndex;
+  }
+  if (haveSaved && found < 0) {
     for (uint8_t i = 0; i < PP_IDENTITY_TABLE_COUNT; ++i) {
       if (memcmp(PP_IDENTITY_TABLE[i].addrLe, saved, 6) == 0) {
         found = i;
@@ -93,7 +107,7 @@ void ppIdentityBegin()
   if (found < 0) {
     load(0);
     clearIdentityBoundState(haveSaved ? "saved identity not in this build" : "no saved identity");
-    writeSelection(REAL_PLUSPLUS_ADDR_LE);
+    writeSelection(REAL_PLUSPLUS_ADDR_LE, 0);
   } else {
     load(static_cast<uint8_t>(found));
   }
@@ -132,7 +146,7 @@ void ppIdentitySwitchTo(uint8_t index)
   }
   Serial.print("Identity: switching to ");
   Serial.println(PP_IDENTITY_TABLE[index].name);
-  writeSelection(PP_IDENTITY_TABLE[index].addrLe);
+  writeSelection(PP_IDENTITY_TABLE[index].addrLe, index);
   clearIdentityBoundState("identity switch");
   Serial.flush();
   delay(50);

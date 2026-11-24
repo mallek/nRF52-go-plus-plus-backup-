@@ -21,6 +21,15 @@ static constexpr uint32_t kBacklightTimeoutMs = 60000;
 static constexpr uint32_t kAfterAnimHoldMs = 5000;
 static constexpr uint32_t kAnimFrameMs = 50;
 static constexpr uint32_t kDebounceMs = 30;
+// After a disconnect the screen shows the state this long, then goes dark; a
+// button tap while disconnected shows it again for the same time.
+static constexpr uint32_t kDisconnectedShowMs = 5000;
+// Keeps the screen lit while a button is held (reset hold, A+B combo).
+static constexpr uint32_t kHeldKeepMs = 2000;
+// Must match PHYSICAL_RESET_BUTTON_HOLD_MS in the sketch; only drives the bar.
+static constexpr uint32_t kResetHoldMs = 5000;
+static constexpr uint32_t kResetHoldShowAfterMs = 700;
+static constexpr uint32_t kResetHoldDrawMs = 100;
 
 static constexpr uint16_t kBg = ST77XX_BLACK;
 static constexpr uint16_t kFg = ST77XX_WHITE;
@@ -55,6 +64,17 @@ static bool backlightOn = true;
 static uint32_t backlightUntil = 0;
 
 static bool connected = false;
+// False until the first connect after boot or factory reset: WAITING vs DISCONNECTED.
+static bool everConnected = false;
+static bool sleepArmed = false;
+static uint32_t sleepAt = 0;
+static uint32_t countdownShown = 0xffffffff;
+
+static bool holdActive = false;
+static bool holdShown = false;
+static bool holdFired = false;
+static uint32_t holdStartedAt = 0;
+static uint32_t holdDrawAt = 0;
 static uint16_t caught = 0;
 static uint16_t fled = 0;
 static uint16_t spun = 0;
@@ -107,6 +127,22 @@ static void centerText(const char* text, int16_t y, uint8_t size, uint16_t color
   tft.print(text);
 }
 
+static void leftText(const char* text, int16_t y, uint8_t size, uint16_t color)
+{
+  tft.setTextSize(size);
+  tft.setTextColor(color, kBg);
+  tft.setCursor(4, y);
+  tft.print(text);
+}
+
+static void rightText(const char* text, int16_t y, uint8_t size, uint16_t color)
+{
+  tft.setTextSize(size);
+  tft.setTextColor(color, kBg);
+  tft.setCursor(240 - 4 - static_cast<int16_t>(strlen(text) * 6 * size), y);
+  tft.print(text);
+}
+
 static uint8_t nameSize(const char* name)
 {
   size_t len = strlen(name);
@@ -130,22 +166,75 @@ static void drawStatusFrame()
   const char* name = ppIdentityName(ppIdentityActive());
   uint8_t size = nameSize(name);
   centerText(name, 70 - (size * 8) / 2, size, kAccent);
-  centerText(ppIdentityCount() > 1 ? "A+B: switch  hold A: reset" : "hold A 5s: reset", 226, 1, kDim);
+  // Each hint sits on the side of the button it names: A left, B right.
+  leftText("A hold: reset", 226, 1, kDim);
+  if (ppIdentityCount() > 1) {
+    centerText("A+B: menu", 226, 1, kDim);
+  }
+  rightText("B: wake", 226, 1, kDim);
   statusDirty = true;
+}
+
+static bool countdownVisible()
+{
+  return !connected && sleepArmed;
+}
+
+static uint32_t sleepSecondsLeft(uint32_t now)
+{
+  int32_t leftMs = static_cast<int32_t>(sleepAt - now);
+  return leftMs > 0 ? static_cast<uint32_t>(leftMs + 999) / 1000 : 0;
+}
+
+// "sleep in MM:SS" under the state word. Fixed width, so it overwrites itself.
+static void drawCountdown(uint32_t now)
+{
+  uint32_t secs = sleepSecondsLeft(now);
+  char line[20];
+  snprintf(line, sizeof(line), "sleep in %02u:%02u",
+           static_cast<unsigned>(secs / 60), static_cast<unsigned>(secs % 60));
+  centerText(line, 150, 2, kAccent);
+  countdownShown = secs;
 }
 
 static void drawStatusLines()
 {
-  tft.fillRect(0, 120, 240, 100, kBg);
-  centerText(connected ? "CONNECTED" : "WAITING", 124, 3, connected ? kGood : kFg);
+  tft.fillRect(0, 120, 240, 104, kBg);
+  // With the countdown showing, the counters move down a little.
+  bool countdown = countdownVisible();
+  int16_t shift = countdown ? 6 : 0;
+  if (connected) {
+    centerText("CONNECTED", 124, 3, kGood);
+  } else if (everConnected) {
+    centerText("DISCONNECTED", 122, 3, kBad);
+  } else {
+    centerText("WAITING", 122, 3, kFg);
+  }
+  if (countdown) {
+    drawCountdown(millis());
+  }
   char counts[32];
   snprintf(counts, sizeof(counts), "caught %u  fled %u", caught, fled);
-  centerText(counts, 164, 2, kFg);
+  centerText(counts, 164 + shift, 2, kFg);
   char spins[16];
   snprintf(spins, sizeof(spins), "spun %u", spun);
-  centerText(spins, 184, 2, kFg);
+  centerText(spins, 182 + shift, 2, kFg);
   centerText(lastEvent, 206, 2, lastEventColor);
   statusDirty = false;
+}
+
+// Bar that fills while A is held toward the factory reset.
+static void drawResetHold(uint32_t heldMs, bool first)
+{
+  if (first) {
+    tft.fillRect(0, 120, 240, 104, kBg);
+    centerText("HOLD TO RESET", 128, 2, kAccent);
+    tft.drawRect(20, 156, 200, 26, kFg);
+    centerText("release to cancel", 194, 1, kDim);
+  }
+  uint32_t clamped = heldMs > kResetHoldMs ? kResetHoldMs : heldMs;
+  int16_t w = static_cast<int16_t>((clamped * 196u) / kResetHoldMs);
+  tft.fillRect(22, 158, w, 22, kBad);
 }
 
 static void drawMenu()
@@ -169,7 +258,9 @@ static void drawMenu()
       tft.print(" *");
     }
   }
-  centerText("B: next   A: select", 214, 2, kDim);
+  // Each hint sits on the side of the button it names: A left, B right.
+  leftText("A:select", 214, 2, kDim);
+  rightText("B:next", 214, 2, kDim);
 }
 
 static void startAnim(PpAnimKind kind, uint32_t now)
@@ -225,6 +316,46 @@ static void updateMenu(uint32_t now)
   }
 }
 
+// Shows the fill bar while A alone is held. The reset itself is done by the
+// lifecycle code, which then calls ppDisplayOnFactoryReset().
+static void updateResetHold(uint32_t now)
+{
+  if (!buttonA.down) {
+    holdFired = false;
+  }
+  bool holding = mode == MODE_STATUS && buttonA.down && !buttonB.down && !waitForRelease && !comboArmed;
+  if (!holding || holdFired) {
+    if (holdShown) {
+      holdShown = false;
+      statusDirty = true;
+    }
+    holdActive = false;
+    return;
+  }
+  if (!holdActive) {
+    holdActive = true;
+    holdStartedAt = now;
+    return;
+  }
+  uint32_t held = now - holdStartedAt;
+  if (anim.kind != PP_ANIM_NONE) {
+    // An animation owns the screen; the bar is redrawn in full after it.
+    holdShown = false;
+    return;
+  }
+  if (held < kResetHoldShowAfterMs) {
+    return;
+  }
+  if (!holdShown) {
+    drawResetHold(held, true);
+    holdShown = true;
+    holdDrawAt = now;
+  } else if (now - holdDrawAt >= kResetHoldDrawMs) {
+    drawResetHold(held, false);
+    holdDrawAt = now;
+  }
+}
+
 static void updateCombo(uint32_t now)
 {
   if (ppIdentityCount() < 2) {
@@ -261,6 +392,7 @@ void ppDisplayBegin()
   backlightUntil = millis() + kBacklightTimeoutMs;
   drawStatusFrame();
   drawStatusLines();
+  startAnim(PP_ANIM_BOOT, millis());
   Serial.println("Display: ST7789 up");
 }
 
@@ -275,12 +407,17 @@ void ppDisplayUpdate()
 
   if (buttonA.pressedEdge || buttonB.pressedEdge) {
     bool wasDark = !backlightOn;
-    touchBacklight(now);
+    bool brief = mode == MODE_STATUS && !connected && everConnected;
+    touchBacklight(now, brief ? kDisconnectedShowMs : kBacklightTimeoutMs);
     if (wasDark) {
       // First press only wakes the screen.
       buttonA.pressedEdge = false;
       buttonB.pressedEdge = false;
     }
+  }
+
+  if (buttonA.down || buttonB.down) {
+    touchBacklight(now, kHeldKeepMs);
   }
 
   if (waitForRelease) {
@@ -299,6 +436,7 @@ void ppDisplayUpdate()
   if (!waitForRelease) {
     updateCombo(now);
   }
+  updateResetHold(now);
   // Easter egg: five quick B taps on the status screen.
   if (mode == MODE_STATUS && buttonB.pressedEdge && !buttonA.down && ppTapCounterTap(eggTaps, now)) {
     Serial.println("Display: easter egg");
@@ -316,8 +454,12 @@ void ppDisplayUpdate()
         drawStatusFrame();
       }
     }
-  } else if (mode == MODE_STATUS && statusDirty) {
-    drawStatusLines();
+  } else if (mode == MODE_STATUS && !holdShown) {
+    if (statusDirty) {
+      drawStatusLines();
+    } else if (backlightOn && countdownVisible() && sleepSecondsLeft(now) != countdownShown) {
+      drawCountdown(now);
+    }
   }
   if (backlightOn && static_cast<int32_t>(now - backlightUntil) >= 0) {
     setBacklight(false);
@@ -329,13 +471,19 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
   switch (event) {
     case PP_FEEDBACK_CONNECTED: {
       connected = true;
+      everConnected = true;
       lastEvent = "";
       break;
     }
     case PP_FEEDBACK_DISCONNECTED: {
       connected = false;
-      lastEvent = "disconnected";
-      lastEventColor = kBad;
+      if (everConnected) {
+        // The state word says it; show the screen briefly, then go dark.
+        lastEvent = "";
+        if (started && mode == MODE_STATUS) {
+          touchBacklight(millis(), kDisconnectedShowMs);
+        }
+      }
       break;
     }
     case PP_FEEDBACK_CAUGHT: {
@@ -363,6 +511,7 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     }
     case PP_FEEDBACK_READY: {
       connected = true;
+      everConnected = true;
       lastEvent = "ready!";
       lastEventColor = ST77XX_YELLOW;
       break;
@@ -389,13 +538,30 @@ void ppDisplayOnFactoryReset()
     return;
   }
   connected = false;
+  everConnected = false;
   caught = 0;
   fled = 0;
   spun = 0;
   lastEvent = "RESET - pair in GO";
   lastEventColor = kAccent;
   statusDirty = true;
-  touchBacklight(millis());
+  holdFired = true;
+  holdShown = false;
+  holdActive = false;
+  uint32_t now = millis();
+  touchBacklight(now);
+  if (mode == MODE_STATUS) {
+    startAnim(PP_ANIM_RESET, now);
+  }
+}
+
+void ppDisplaySetSleepDeadline(bool armed, uint32_t atMs)
+{
+  if (armed != sleepArmed) {
+    statusDirty = true;
+  }
+  sleepArmed = armed;
+  sleepAt = atMs;
 }
 
 void ppDisplayShutdown()
@@ -422,6 +588,7 @@ void ppDisplayBegin() {}
 void ppDisplayUpdate() {}
 void ppDisplayOnEvent(PpFeedbackEvent) {}
 void ppDisplayOnFactoryReset() {}
+void ppDisplaySetSleepDeadline(bool, uint32_t) {}
 void ppDisplayShutdown() {}
 bool ppUiOwnsButtons()
 {

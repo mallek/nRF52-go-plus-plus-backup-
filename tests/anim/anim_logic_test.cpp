@@ -94,8 +94,20 @@ static void testTapCounter()
   CHECK(t.count == 1);
 }
 
+static void testBootAndReset()
+{
+  CHECK(ppAnimDurationMs(PP_ANIM_BOOT) == 2000);
+  CHECK(ppAnimDurationMs(PP_ANIM_RESET) == 3000);
+  PpAnimState s = { PP_ANIM_NONE, 0 };
+  ppAnimStart(s, PP_ANIM_RESET, 500);
+  CHECK(ppAnimProgress(s, 2000) == 500);
+  CHECK(!ppAnimDone(s, 3499));
+  CHECK(ppAnimDone(s, 3500));
+}
+
 int main()
 {
+  testBootAndReset();
   testProgress();
   testWrap();
   testRestart();

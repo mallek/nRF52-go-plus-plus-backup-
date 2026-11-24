@@ -9,6 +9,7 @@
 
 static constexpr uint32_t kAnimDurationMs = 2000;
 static constexpr uint32_t kEggDurationMs = 2500;
+static constexpr uint32_t kResetDurationMs = 3000;
 // Easter egg: this many B taps inside the window.
 static constexpr uint8_t kEggTaps = 5;
 static constexpr uint32_t kEggTapWindowMs = 2000;
@@ -18,7 +19,9 @@ enum PpAnimKind : uint8_t {
   PP_ANIM_CATCH,
   PP_ANIM_SPIN,
   PP_ANIM_EGG,
-  PP_ANIM_READY
+  PP_ANIM_READY,
+  PP_ANIM_BOOT,
+  PP_ANIM_RESET
 };
 
 struct PpAnimState {

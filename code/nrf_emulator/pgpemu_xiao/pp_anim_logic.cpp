@@ -2,6 +2,9 @@
 
 uint32_t ppAnimDurationMs(PpAnimKind kind)
 {
+  if (kind == PP_ANIM_RESET) {
+    return kResetDurationMs;
+  }
   return (kind == PP_ANIM_EGG || kind == PP_ANIM_READY) ? kEggDurationMs : kAnimDurationMs;
 }
 

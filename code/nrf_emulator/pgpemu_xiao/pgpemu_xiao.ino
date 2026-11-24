@@ -271,6 +271,7 @@ void loop()
 {
   ppRunMainLoopTick(makeAppLoopRefs());
   ppFeedbackUpdate();
+  ppDisplaySetSleepDeadline(disconnectedSleepArmed, disconnectedSleepAt);
   ppDisplayUpdate();
 }
 
