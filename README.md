@@ -112,16 +112,14 @@ To try the screen and menu with no real device material (these fake identities
 advertise but can never pair):
 
 ```powershell
-python tools\identity_table\gen_identities.py code
-rf_emulator\pgpemu_xiao\pp_identities.generated.h --dummy TEST1 TEST2
+python tools/identity_table/gen_identities.py code/nrf_emulator/pgpemu_xiao/pp_identities.generated.h --dummy TEST1 TEST2
 ```
 
 With real material, pass one completed device-material header per identity.
 The name is what the screen shows (10 characters max):
 
 ```powershell
-python tools\identity_table\gen_identities.py code
-rf_emulator\pgpemu_xiao\pp_identities.generated.h MAIN=path	o\pp_device_material.main.h ALT=path	o\pp_device_material.alt.h
+python tools/identity_table/gen_identities.py code/nrf_emulator/pgpemu_xiao/pp_identities.generated.h MAIN=path/to/pp_device_material.main.h ALT=path/to/pp_device_material.alt.h
 ```
 
 ### Build and flash
@@ -130,15 +128,14 @@ Needs the Adafruit nRF52 board package and these libraries: Adafruit GFX,
 Adafruit ST7735 and ST7789, Adafruit NeoPixel.
 
 ```powershell
-arduino-cli compile --fqbn adafruit:nrf52:cluenrf52840 --output-dir build\clue "code
-rf_emulator\pgpemu_xiao"
+arduino-cli compile --fqbn adafruit:nrf52:cluenrf52840 --output-dir build/clue "code/nrf_emulator/pgpemu_xiao"
 ```
 
 Convert the hex to UF2 with `uf2conv.py` from the Adafruit nRF52 core
 (`tools/uf2conv` inside the board package):
 
 ```powershell
-python uf2conv.py build\clue\pgpemu_xiao.ino.hex -c -f 0xADA52840 -o clue.uf2
+python uf2conv.py build/clue/pgpemu_xiao.ino.hex -c -f 0xADA52840 -o clue.uf2
 ```
 
 Double-tap the CLUE reset button, then copy `clue.uf2` to the `CLUEBOOT` drive.
