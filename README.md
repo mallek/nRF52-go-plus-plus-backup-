@@ -2,6 +2,12 @@
 
 Experimental nRF52 firmware for emulating a Pokemon GO Plus + BLE peripheral.
 
+![Adafruit CLUE running the firmware in a printed Poke Ball case](docs/images/clue-case-cover.jpg)
+
+This fork adds an [Adafruit CLUE port](#adafruit-clue-port-screen-multi-identity)
+with a status screen, animations and more than one identity on a single device,
+plus a Seeed XIAO nRF52840 port.
+
 This repository intentionally does not include private device material. To build
 the firmware, provide your own `pp_device_material.h` from a device you own.
 
@@ -92,6 +98,32 @@ CLUE it adds:
 - more than one identity in a single build, with an on-screen menu to switch
 - a countdown to System OFF after 15 minutes disconnected
 
+<table>
+  <tr>
+    <td><img src="docs/images/screen-ready.jpg" width="200" alt="GO handshake complete"></td>
+    <td><img src="docs/images/screen-catch.jpg" width="200" alt="Catch animation"></td>
+    <td><img src="docs/images/screen-spin.jpg" width="200" alt="PokeStop spin animation"></td>
+  </tr>
+  <tr>
+    <td align="center">ready</td>
+    <td align="center">catch</td>
+    <td align="center">spin</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/screen-identity-menu.jpg" width="200" alt="Identity menu"></td>
+    <td><img src="docs/images/screen-reset-hold.jpg" width="200" alt="Hold A to factory reset"></td>
+    <td><img src="docs/images/screen-disconnected.jpg" width="200" alt="Disconnected with sleep countdown"></td>
+  </tr>
+  <tr>
+    <td align="center">identity menu</td>
+    <td align="center">hold A to reset</td>
+    <td align="center">disconnected countdown</td>
+  </tr>
+</table>
+
+The XIAO target has not been rebuilt since the CLUE port landed, so treat it as
+untested on the current code. The CLUE build is the one in daily use.
+
 Controls:
 
 | Buttons | Action |
@@ -147,6 +179,12 @@ The CLUE has no LiPo charger. It runs well from the Adafruit 3xAAA holder
 holder is here:
 
 https://www.printables.com/model/1925937-poke-ball-pocket-case-for-adafruit-clue-3xaaa-pack
+
+![Render of the printed case](docs/images/case-render.jpg)
+
+Three single-color parts, no screws: the two trays slide onto the black chassis
+and four snap tongues lock them. The screen and buttons sit below the surface so
+a pocket cannot press on them.
 
 ## Release Safety
 
