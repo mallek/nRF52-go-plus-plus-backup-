@@ -79,11 +79,84 @@ libraries, then run:
 arduino-cli compile --fqbn adafruit:nrf52:feather52840 --export-binaries "code\nrf_emulator\pgpemu_nrf52_plusplus_exp"
 ```
 
+## Adafruit CLUE Port (screen, multi-identity)
+
+`code/nrf_emulator/pgpemu_xiao` is a second sketch that runs on the Adafruit CLUE
+(nRF52840, 240x240 screen, two buttons) and on the Seeed XIAO nRF52840. On the
+CLUE it adds:
+
+- a status screen: connected / waiting / disconnected, plus caught, fled and
+  spun counts for the session
+- short animations for boot, catch, PokeStop spin, GO handshake complete, and
+  factory reset
+- more than one identity in a single build, with an on-screen menu to switch
+- a countdown to System OFF after 15 minutes disconnected
+
+Controls:
+
+| Buttons | Action |
+| --- | --- |
+| A or B | wake the screen |
+| hold A 5 s | factory reset (a bar fills while you hold) |
+| hold A+B 1.5 s | identity menu: B = next, A = select |
+
+Switching identity clears the pairing and reboots, so pair again in GO.
+
+### Identity table
+
+This sketch does not read `pp_device_material.h` directly. It builds from a
+generated table, `pp_identities.generated.h`, which holds one or more
+identities. The table is gitignored. Never commit or share a real one.
+
+To try the screen and menu with no real device material (these fake identities
+advertise but can never pair):
+
+```powershell
+python tools\identity_table\gen_identities.py code
+rf_emulator\pgpemu_xiao\pp_identities.generated.h --dummy TEST1 TEST2
+```
+
+With real material, pass one completed device-material header per identity.
+The name is what the screen shows (10 characters max):
+
+```powershell
+python tools\identity_table\gen_identities.py code
+rf_emulator\pgpemu_xiao\pp_identities.generated.h MAIN=path	o\pp_device_material.main.h ALT=path	o\pp_device_material.alt.h
+```
+
+### Build and flash
+
+Needs the Adafruit nRF52 board package and these libraries: Adafruit GFX,
+Adafruit ST7735 and ST7789, Adafruit NeoPixel.
+
+```powershell
+arduino-cli compile --fqbn adafruit:nrf52:cluenrf52840 --output-dir build\clue "code
+rf_emulator\pgpemu_xiao"
+```
+
+Convert the hex to UF2 with `uf2conv.py` from the Adafruit nRF52 core
+(`tools/uf2conv` inside the board package):
+
+```powershell
+python uf2conv.py build\clue\pgpemu_xiao.ino.hex -c -f 0xADA52840 -o clue.uf2
+```
+
+Double-tap the CLUE reset button, then copy `clue.uf2` to the `CLUEBOOT` drive.
+
+### Power and case
+
+The CLUE has no LiPo charger. It runs well from the Adafruit 3xAAA holder
+(product 727) on the JST port. A printable pocket case for the CLUE and that
+holder is here:
+
+https://www.printables.com/model/1925937-poke-ball-pocket-case-for-adafruit-clue-3xaaa-pack
+
 ## Release Safety
 
 Before publishing your own fork, make sure these are not committed:
 
 - `pp_device_material.h`
+- `pp_identities.generated.h`
 - `tools/flash_image_reader/input/`
 - `tools/flash_image_reader/device_material_info.txt`
 - `tools/flash_image_reader/pp_device_material.generated.h`
