@@ -10,7 +10,9 @@
 // CLUE controls:
 //   hold A 5 s     factory reset (handled by the lifecycle code, not here)
 //   hold A+B 1.5 s open the identity menu; B = next, A = select
-//   A or B         wake the screen (5 s while disconnected)
+//   A or B         wake the screen for 30 s (5 s while disconnected)
+// A catch, flee or spin does not light a dark screen (battery); it only counts.
+// The animations play when the screen is already lit.
 //   B x5 in 2 s    easter egg
 void ppDisplayBegin();
 void ppDisplayUpdate();

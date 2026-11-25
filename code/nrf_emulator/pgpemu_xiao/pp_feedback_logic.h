@@ -18,10 +18,12 @@ enum PpFeedbackEvent : uint8_t {
   PP_FEEDBACK_FULLY_CHARGED,
   PP_FEEDBACK_STORAGE_FULL,  // raw full signal; the source is not known from the bytes
   PP_FEEDBACK_POKEMON_FULL,  // derived: full signal that followed a Pokemon alert
-  PP_FEEDBACK_BAG_FULL,      // derived: full signal that followed a Pokestop alert
+  PP_FEEDBACK_BAG_FULL,      // not produced: its real signal is not known yet (see PP_FEEDBACK_SPIN_FAILED)
   PP_FEEDBACK_STOP_PASSED,   // Pokestop left range without a spin (10 FF FF after in range)
   PP_FEEDBACK_UNKNOWN_SINGLE,
-  PP_FEEDBACK_READY          // GO handshake finished (first pair or reconnect); appended to keep numbering
+  PP_FEEDBACK_READY,         // GO handshake finished (first pair or reconnect); appended to keep numbering
+  PP_FEEDBACK_BALLS_EMPTY,   // red blinks with dark gaps; rule from Jack's emulator, NOT field-verified here
+  PP_FEEDBACK_SPIN_FAILED    // derived: full signal that followed a Pokestop alert (the app turned the spin down)
 };
 
 // Battery percent from cell voltage, interpolated on a typical LiPo discharge curve.
@@ -49,15 +51,18 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len);
 
 const char* ppFeedbackEventName(PpFeedbackEvent event);
 
-// Tracks whether the Pokemon box and/or the bag is full. The full signal is the same
-// for both, so the event just before it says which one it was. A catch or a throw
-// clears the Pokemon flag, a Pokestop spin clears the bag flag.
+// Tracks whether the Pokemon box is full. The same long red flash also follows a
+// Pokestop when the app turns a spin down, so the event just before it says which
+// one it was. After a stop it is a failed spin, NOT a full bag: checked on the CLUE
+// screen 2026-11-25 with room in the bag, and it matches Jack's emulator
+// (Jackv-makes/nRF52-PoGoPP-Emu). Otherwise it is the Pokemon box; a catch or a
+// throw clears that flag. bagFull is kept for the LED code but nothing sets it.
 struct PpFullState {
   bool pokemonFull;
   bool bagFull;
   PpFeedbackEvent context;  // last Pokemon-nearby or Pokestop-nearby event
   uint32_t contextMs;
-  PpFeedbackEvent lastFull; // what the latest full signal was: POKEMON_FULL, BAG_FULL or STORAGE_FULL
+  PpFeedbackEvent lastFull; // what the latest full signal was: POKEMON_FULL or SPIN_FAILED
 };
 
 static constexpr uint32_t PP_FULL_CONTEXT_MS = 20000;

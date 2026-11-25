@@ -12,12 +12,16 @@
 #include <Adafruit_ST7789.h>
 #include <SPI.h>
 
+// Battery: the screen stays dark on catch and spin and the panel controller
+// sleeps while the backlight is off. Both ideas are from Jack's Plus+ emulator,
+// https://github.com/Jackv-makes/nRF52-PoGoPP-Emu (AGPL, same kiyoukan fork).
+
 namespace {
 
 static constexpr uint32_t kComboHoldMs = 1500;
 static constexpr uint32_t kMenuTimeoutMs = 20000;
-static constexpr uint32_t kBacklightTimeoutMs = 60000;
-// After a catch or spin animation the status screen stays lit this long.
+static constexpr uint32_t kBacklightTimeoutMs = 30000;
+// After an animation the status screen stays lit this long.
 static constexpr uint32_t kAfterAnimHoldMs = 5000;
 static constexpr uint32_t kAnimFrameMs = 50;
 static constexpr uint32_t kDebounceMs = 30;
@@ -26,6 +30,12 @@ static constexpr uint32_t kDebounceMs = 30;
 static constexpr uint32_t kDisconnectedShowMs = 5000;
 // Keeps the screen lit while a button is held (reset hold, A+B combo).
 static constexpr uint32_t kHeldKeepMs = 2000;
+// A warning (box full, no balls) on a dark screen lights it this long.
+static constexpr uint32_t kWarningShowMs = 8000;
+// The ST7789 ignores Sleep Out sent sooner than this after Sleep In.
+static constexpr uint32_t kPanelSleepGapMs = 120;
+// Wait after Sleep Out before the next command.
+static constexpr uint32_t kPanelWakeSettleMs = 5;
 // Must match PHYSICAL_RESET_BUTTON_HOLD_MS in the sketch; only drives the bar.
 static constexpr uint32_t kResetHoldMs = 5000;
 static constexpr uint32_t kResetHoldShowAfterMs = 700;
@@ -62,6 +72,7 @@ static uint8_t menuIndex = 0;
 static uint32_t menuActivityAt = 0;
 static bool backlightOn = true;
 static uint32_t backlightUntil = 0;
+static uint32_t panelSleptAt = 0;
 
 static bool connected = false;
 // False until the first connect after boot or factory reset: WAITING vs DISCONNECTED.
@@ -100,13 +111,30 @@ static void readButton(Button& b, uint32_t now)
   }
 }
 
+static void redrawAfterWake();
+
+// Dark means backlight off AND the panel controller asleep. Nothing is drawn
+// while dark; waking repaints the screen before the light comes on.
 static void setBacklight(bool on)
 {
   if (on == backlightOn) {
     return;
   }
   backlightOn = on;
-  digitalWrite(PIN_TFT_LITE, on ? HIGH : LOW);
+  if (on) {
+    uint32_t since = millis() - panelSleptAt;
+    if (since < kPanelSleepGapMs) {
+      delay(kPanelSleepGapMs - since);
+    }
+    tft.enableSleep(false);
+    delay(kPanelWakeSettleMs);
+    redrawAfterWake();
+    digitalWrite(PIN_TFT_LITE, HIGH);
+  } else {
+    digitalWrite(PIN_TFT_LITE, LOW);
+    tft.enableSleep(true);
+    panelSleptAt = millis();
+  }
 }
 
 static void touchBacklight(uint32_t now, uint32_t forMs = kBacklightTimeoutMs)
@@ -261,6 +289,20 @@ static void drawMenu()
   // Each hint sits on the side of the button it names: A left, B right.
   leftText("A:select", 214, 2, kDim);
   rightText("B:next", 214, 2, kDim);
+}
+
+static void redrawAfterWake()
+{
+  if (mode == MODE_MENU) {
+    drawMenu();
+    return;
+  }
+  if (anim.kind != PP_ANIM_NONE) {
+    // The animation draws its own frames and the status screen follows it.
+    return;
+  }
+  drawStatusFrame();
+  drawStatusLines();
 }
 
 static void startAnim(PpAnimKind kind, uint32_t now)
@@ -454,10 +496,10 @@ void ppDisplayUpdate()
         drawStatusFrame();
       }
     }
-  } else if (mode == MODE_STATUS && !holdShown) {
+  } else if (mode == MODE_STATUS && !holdShown && backlightOn) {
     if (statusDirty) {
       drawStatusLines();
-    } else if (backlightOn && countdownVisible() && sleepSecondsLeft(now) != countdownShown) {
+    } else if (countdownVisible() && sleepSecondsLeft(now) != countdownShown) {
       drawCountdown(now);
     }
   }
@@ -521,14 +563,41 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       lastEventColor = ST77XX_CYAN;
       break;
     }
+    // The next two never light a dark screen; the text is there to check the
+    // decode against the game when the screen is already lit.
+    case PP_FEEDBACK_SPIN_FAILED: {
+      lastEvent = "spin failed";
+      lastEventColor = kDim;
+      break;
+    }
+    case PP_FEEDBACK_STOP_PASSED: {
+      lastEvent = "stop passed";
+      lastEventColor = kDim;
+      break;
+    }
+    case PP_FEEDBACK_BALLS_EMPTY: {
+      lastEvent = "NO BALLS";
+      lastEventColor = kBad;
+      break;
+    }
     default: {
       return;
     }
   }
   statusDirty = true;
+  if (!started || mode != MODE_STATUS) {
+    return;
+  }
+  if (!backlightOn && !ppEventWakesScreen(event)) {
+    // Dark screen: catches and spins only count. Tap a button to look.
+    return;
+  }
+  uint32_t now = millis();
   PpAnimKind kind = ppAnimKindForEvent(event);
-  if (started && mode == MODE_STATUS && kind != PP_ANIM_NONE) {
-    startAnim(kind, millis());
+  if (kind != PP_ANIM_NONE) {
+    startAnim(kind, now);
+  } else if (!backlightOn) {
+    touchBacklight(now, kWarningShowMs);
   }
 }
 

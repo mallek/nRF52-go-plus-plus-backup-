@@ -47,6 +47,15 @@ bool ppAnimDone(const PpAnimState& state, uint32_t now);
 
 PpAnimKind ppAnimKindForEvent(PpFeedbackEvent event);
 
+// Whether an event may light a dark screen. Catches, flees and spins do not:
+// they only count, and you tap a button to look. The handshake finishing and
+// the warnings (box full, no balls) do: they want action in the game, and
+// lighting the screen lets the decode be checked against the app. A failed
+// spin does not.
+// Idea from Jackv-makes/nRF52-PoGoPP-Emu (AGPL), which keeps its screen dark
+// on catch and spin for battery life.
+bool ppEventWakesScreen(PpFeedbackEvent event);
+
 // Records a tap; true (and resets) on the kEggTaps-th tap inside kEggTapWindowMs
 // of the first. A tap outside the window starts a new window.
 bool ppTapCounterTap(PpTapCounter& counter, uint32_t now);

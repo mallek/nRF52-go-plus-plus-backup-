@@ -105,6 +105,25 @@ static void testBootAndReset()
   CHECK(ppAnimDone(s, 3500));
 }
 
+static void testDarkScreenWake()
+{
+  // Routine play never lights a dark screen.
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_CAUGHT));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_FLED));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_POKESTOP_SPUN));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_POKEMON_NEARBY));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_POKESTOP_NEARBY));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_STOP_PASSED));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_SPIN_FAILED));
+  CHECK(!ppEventWakesScreen(PP_FEEDBACK_CONNECTED));
+  // The handshake finishing and the warnings do.
+  CHECK(ppEventWakesScreen(PP_FEEDBACK_READY));
+  CHECK(ppEventWakesScreen(PP_FEEDBACK_POKEMON_FULL));
+  CHECK(ppEventWakesScreen(PP_FEEDBACK_BAG_FULL));
+  CHECK(ppEventWakesScreen(PP_FEEDBACK_STORAGE_FULL));
+  CHECK(ppEventWakesScreen(PP_FEEDBACK_BALLS_EMPTY));
+}
+
 int main()
 {
   testBootAndReset();
@@ -114,6 +133,7 @@ int main()
   testEventMap();
   testEggDuration();
   testTapCounter();
+  testDarkScreenWake();
   if (failures == 0) {
     std::printf("anim_logic: all passed\n");
     return 0;

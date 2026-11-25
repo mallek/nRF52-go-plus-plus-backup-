@@ -50,6 +50,22 @@ PpAnimKind ppAnimKindForEvent(PpFeedbackEvent event)
   }
 }
 
+bool ppEventWakesScreen(PpFeedbackEvent event)
+{
+  switch (event) {
+    case PP_FEEDBACK_READY:
+    case PP_FEEDBACK_POKEMON_FULL:
+    case PP_FEEDBACK_BAG_FULL:
+    case PP_FEEDBACK_STORAGE_FULL:
+    case PP_FEEDBACK_BALLS_EMPTY: {
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
 bool ppTapCounterTap(PpTapCounter& counter, uint32_t now)
 {
   if (counter.count == 0 || (now - counter.firstAt) > kEggTapWindowMs) {

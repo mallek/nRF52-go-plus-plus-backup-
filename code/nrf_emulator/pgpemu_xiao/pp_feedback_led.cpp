@@ -18,6 +18,7 @@ static constexpr uint8_t kChaseRotations = 2;
 static constexpr uint32_t kPulsePeriodMs = 2000;
 static constexpr uint32_t kPulseStepMs = 40;    // quantized so show() is not called every loop
 static constexpr uint32_t kFullPeriodMs = 3000; // full-warning breathe, slower than the charging one
+static constexpr bool kLedEnabled = PP_HAS_FEEDBACK_LED != 0; // false: cleared once at boot, then never driven
 static constexpr bool kShowRoutineEvents = false; // nearby / spun / passed flashes (testing aid)
 
 enum EffectStyle : uint8_t {
@@ -81,8 +82,15 @@ static bool effectFor(PpFeedbackEvent event, Effect& out)
       out = { EFFECT_WHOLE_BLINK, 0, 220, 255, 1, 1000, 0, 0 };  // one long cyan, then the breathe
       return true;
     }
+    case PP_FEEDBACK_SPIN_FAILED: {
+      return false;  // routine: a stop on cool-down, say
+    }
     case PP_FEEDBACK_READY: {
       return false;  // screen-only; the ring already blinked white on connect
+    }
+    case PP_FEEDBACK_BALLS_EMPTY: {
+      out = { EFFECT_WHOLE_BLINK, 255, 0, 0, 2, 500, 300, 0 };  // two slow reds (fled is three quick)
+      return true;
     }
     case PP_FEEDBACK_UNKNOWN_SINGLE: {
       out = { EFFECT_WHOLE_BLINK, 255, 220, 0, 3, 150, 150, 0 };  // yellow: undecoded single flash
@@ -252,7 +260,7 @@ void ppFeedbackLedSetFull(bool pokemonFull, bool bagFull)
 void ppFeedbackLedPlayEvent(PpFeedbackEvent event, uint32_t nowMs)
 {
   Effect next;
-  if (!effectFor(event, next)) {
+  if (!kLedEnabled || !effectFor(event, next)) {
     return;
   }
   effect = next;
@@ -262,6 +270,9 @@ void ppFeedbackLedPlayEvent(PpFeedbackEvent event, uint32_t nowMs)
 
 void ppFeedbackLedUpdate(uint32_t nowMs)
 {
+  if (!kLedEnabled) {
+    return;
+  }
   render(nowMs);
 }
 

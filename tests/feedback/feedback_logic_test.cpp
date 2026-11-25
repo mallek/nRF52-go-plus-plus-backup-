@@ -132,6 +132,18 @@ static void testClassify()
   // Any other colored single entry is still undecoded.
   const uint8_t unknownSingle[] = { 0x00, 0x00, 0x00, 0x01, 0x22, 0x12, 0x34 };
   CHECK(ppClassifyLedWrite(unknownSingle, sizeof(unknownSingle)) == PP_FEEDBACK_UNKNOWN_SINGLE);
+  // Red blinks with dark gaps: out of balls (Jack's rule; synthetic bytes, not from a field log).
+  const uint8_t ballsEmpty[] = { 0x00, 0x00, 0x00, 0x04,
+                                 0x04, 0x0f, 0x70, 0x04, 0x00, 0x00,
+                                 0x04, 0x0f, 0x70, 0x04, 0x00, 0x00 };
+  CHECK(ppClassifyLedWrite(ballsEmpty, sizeof(ballsEmpty)) == PP_FEEDBACK_BALLS_EMPTY);
+  CHECK(std::strcmp(ppFeedbackEventName(PP_FEEDBACK_BALLS_EMPTY), "balls-empty") == 0);
+  // Red with no gap, or another color mixed in, is still undecoded.
+  const uint8_t redNoGap[] = { 0x00, 0x00, 0x00, 0x02, 0x04, 0x0f, 0x70, 0x04, 0x0f, 0x70 };
+  CHECK(ppClassifyLedWrite(redNoGap, sizeof(redNoGap)) == PP_FEEDBACK_RESULT_UNKNOWN);
+  const uint8_t redAndGreen[] = { 0x00, 0x00, 0x00, 0x03,
+                                  0x04, 0x0f, 0x70, 0x04, 0x00, 0x00, 0x04, 0xf0, 0x70 };
+  CHECK(ppClassifyLedWrite(redAndGreen, sizeof(redAndGreen)) == PP_FEEDBACK_RESULT_UNKNOWN);
   const uint8_t empty[] = { 0x00, 0x00, 0x00, 0x00 };
   CHECK(ppClassifyLedWrite(empty, sizeof(empty)) == PP_FEEDBACK_NONE);
 
@@ -160,29 +172,27 @@ static void testFullState()
   CHECK(ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 3000));
   CHECK(!ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 4000));
 
-  // Full after a stop: bag. A spin clears it, a catch does not.
+  // The same flash after a stop is a failed spin: nothing is full.
   ppFullStateNote(s, PP_FEEDBACK_POKESTOP_NEARBY, 10000);
-  CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 11000));
-  CHECK(!s.pokemonFull && s.bagFull);
-  CHECK(s.lastFull == PP_FEEDBACK_BAG_FULL);
-  CHECK(ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 12000));
-  CHECK(!ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 13000));
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 11000));
+  CHECK(!s.pokemonFull && !s.bagFull);
+  CHECK(s.lastFull == PP_FEEDBACK_SPIN_FAILED);
+  CHECK(std::strcmp(ppFeedbackEventName(PP_FEEDBACK_SPIN_FAILED), "spin-failed") == 0);
 
   // A fled throw also clears the Pokemon flag.
   ppFullStateNote(s, PP_FEEDBACK_POKEMON_NEARBY, 20000);
   ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 21000);
   CHECK(!ppFullStateNote(s, PP_FEEDBACK_FLED, 22000));
 
-  // Stale or missing context: assume both, either success clears its own half.
-  ppFullStateNote(s, PP_FEEDBACK_POKEMON_NEARBY, 30000);
+  // Stale or missing context: the Pokemon box. A catch clears it.
+  ppFullStateNote(s, PP_FEEDBACK_POKESTOP_NEARBY, 30000);
   CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 30000 + PP_FULL_CONTEXT_MS + 1));
-  CHECK(s.pokemonFull && s.bagFull);
-  CHECK(s.lastFull == PP_FEEDBACK_STORAGE_FULL);
-  CHECK(ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 60000));
-  CHECK(!ppFullStateNote(s, PP_FEEDBACK_POKESTOP_SPUN, 61000));
+  CHECK(s.pokemonFull && !s.bagFull);
+  CHECK(s.lastFull == PP_FEEDBACK_POKEMON_FULL);
+  CHECK(!ppFullStateNote(s, PP_FEEDBACK_CAUGHT, 60000));
   ppFullStateInit(s);
   CHECK(ppFullStateNote(s, PP_FEEDBACK_STORAGE_FULL, 5));
-  CHECK(s.pokemonFull && s.bagFull);
+  CHECK(s.pokemonFull && !s.bagFull);
 
   // Dark events and stop-passed never change the flags.
   ppFullStateInit(s);

@@ -41,6 +41,37 @@ static bool entryIs(const uint8_t* data, uint8_t index, const Entry& e)
   return p[0] == e.a && p[1] == e.b && p[2] == e.c;
 }
 
+static bool entryIsDark(const uint8_t* p)
+{
+  return p[1] == 0x00 && (p[2] & 0x0F) == 0x00;
+}
+
+// Byte 1 is green (high nibble) and red (low nibble); the low nibble of byte 2 is blue.
+static bool entryIsRedOnly(const uint8_t* p)
+{
+  return (p[1] & 0x0F) != 0x00 && (p[1] & 0xF0) == 0x00 && (p[2] & 0x0F) == 0x00;
+}
+
+// Out of balls, per Jackv-makes/nRF52-PoGoPP-Emu (AGPL): every lit entry is
+// pure red and there is at least one dark gap between them. Never seen in our
+// own field logs, so the screen is how this gets checked against the game.
+static bool isRedBlinkWithGaps(const uint8_t* data, uint8_t count)
+{
+  uint8_t red = 0;
+  uint8_t dark = 0;
+  for (uint8_t i = 0; i < count; ++i) {
+    const uint8_t* p = data + 4 + 3 * i;
+    if (entryIsDark(p)) {
+      ++dark;
+    } else if (entryIsRedOnly(p)) {
+      ++red;
+    } else {
+      return false;
+    }
+  }
+  return red > 0 && dark > 0;
+}
+
 static bool containsEntry(const uint8_t* data, uint8_t count, const Entry& e)
 {
   for (uint8_t i = 0; i < count; ++i) {
@@ -137,6 +168,10 @@ PpFeedbackEvent ppClassifyLedWrite(const uint8_t* data, uint16_t len)
   if (entryIs(data, 0, kEncounter) || entryIs(data, 0, kEncounterAlt)) {
     return PP_FEEDBACK_POKEMON_NEARBY;
   }
+  // Last, so it can only claim writes that were undecoded before.
+  if (isRedBlinkWithGaps(data, count)) {
+    return PP_FEEDBACK_BALLS_EMPTY;
+  }
   return PP_FEEDBACK_RESULT_UNKNOWN;
 }
 
@@ -191,6 +226,12 @@ const char* ppFeedbackEventName(PpFeedbackEvent event)
     case PP_FEEDBACK_READY: {
       return "ready";
     }
+    case PP_FEEDBACK_BALLS_EMPTY: {
+      return "balls-empty";
+    }
+    case PP_FEEDBACK_SPIN_FAILED: {
+      return "spin-failed";
+    }
   }
   return "?";
 }
@@ -215,16 +256,11 @@ bool ppFullStateNote(PpFullState& state, PpFeedbackEvent event, uint32_t nowMs)
     }
     case PP_FEEDBACK_STORAGE_FULL: {
       bool fresh = state.context != PP_FEEDBACK_NONE && nowMs - state.contextMs <= PP_FULL_CONTEXT_MS;
-      if (fresh && state.context == PP_FEEDBACK_POKEMON_NEARBY) {
-        state.pokemonFull = true;
-        state.lastFull = PP_FEEDBACK_POKEMON_FULL;
-      } else if (fresh && state.context == PP_FEEDBACK_POKESTOP_NEARBY) {
-        state.bagFull = true;
-        state.lastFull = PP_FEEDBACK_BAG_FULL;
+      if (fresh && state.context == PP_FEEDBACK_POKESTOP_NEARBY) {
+        state.lastFull = PP_FEEDBACK_SPIN_FAILED;
       } else {
         state.pokemonFull = true;
-        state.bagFull = true;
-        state.lastFull = PP_FEEDBACK_STORAGE_FULL;
+        state.lastFull = PP_FEEDBACK_POKEMON_FULL;
       }
       break;
     }

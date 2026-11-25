@@ -16,6 +16,8 @@
 #define PP_HAS_BATTERY_GAUGE 0
 #define PP_LED_PIN PIN_NEOPIXEL
 #define PP_LED_PHYSICAL_COUNT 1
+// The NeoPixel is on the back of the board, hidden inside the case: keep it dark.
+#define PP_HAS_FEEDBACK_LED 0
 
 #else
 
@@ -27,6 +29,7 @@
 #define PP_HAS_BATTERY_GAUGE 1
 #define PP_LED_PIN D7
 #define PP_LED_PHYSICAL_COUNT 7
+#define PP_HAS_FEEDBACK_LED 1
 
 #endif
 
