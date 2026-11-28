@@ -60,6 +60,12 @@ static bool writeSave()
     Serial.println("Gachi: could not save");
     return false;
   }
+  // With no /gachi.bin, /gachi.new may hold the last good save (an earlier swap
+  // was cut short): make it /gachi.bin before /gachi.new is written over.
+  if (!InternalFS.exists(kSavePath) && InternalFS.exists(kNewPath) && !InternalFS.rename(kNewPath, kSavePath)) {
+    Serial.println("Gachi: could not save, kept /gachi.new");
+    return false;
+  }
   InternalFS.remove(kNewPath);
   File file(InternalFS);
   if (!file.open(kNewPath, FILE_O_WRITE)) {
@@ -114,7 +120,16 @@ static void saveIfChanged(const uint8_t* before, size_t beforeLen)
 void ppGachiBegin()
 {
   PpGachiState loaded;
-  bool ok = loadFile(kSavePath, loaded) || loadFile(kNewPath, loaded);
+  bool fromSave = loadFile(kSavePath, loaded);
+  bool ok = fromSave || loadFile(kNewPath, loaded);
+  if (ok && !fromSave) {
+    // Only /gachi.new was good (a swap cut short, or a bad /gachi.bin): promote
+    // it, so the next save cannot start by deleting the only good copy.
+    InternalFS.remove(kSavePath);
+    if (!InternalFS.rename(kNewPath, kSavePath)) {
+      Serial.println("Gachi: rename failed, kept /gachi.new");
+    }
+  }
   if (ok) {
     game = loaded;
   } else {
