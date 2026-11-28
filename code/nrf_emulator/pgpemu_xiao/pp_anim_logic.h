@@ -58,14 +58,44 @@ bool ppEventWakesScreen(PpFeedbackEvent event);
 // What one feedback event does to the screen, given whether it is lit and the
 // Animations setting. With animations off nothing plays and catches, spins and
 // READY neither light nor extend the screen; warnings still light a dark one.
-enum PpScreenActionKind : uint8_t { PP_SCREEN_NOTHING, PP_SCREEN_ANIM, PP_SCREEN_LIGHT_WARNING };
+enum PpScreenActionKind : uint8_t {
+  PP_SCREEN_NOTHING,
+  PP_SCREEN_ANIM,
+  PP_SCREEN_LIGHT_WARNING,
+  PP_SCREEN_PET_REACTION,  // play `reaction` on the stage
+  PP_SCREEN_LIGHT_HOME     // light a dark screen for the normal time, play nothing
+};
+
+enum PpPetReaction : uint8_t {
+  PP_REACT_NONE,
+  PP_REACT_HAPPY,
+  PP_REACT_FLOP,
+  PP_REACT_BERRY,
+  PP_REACT_BERRY_FULL,
+  PP_REACT_ALERT,
+  PP_REACT_WAKE
+};
 
 struct PpScreenAction {
   PpScreenActionKind kind;
-  PpAnimKind anim;  // set for PP_SCREEN_ANIM, else PP_ANIM_NONE
+  PpAnimKind anim;         // set for PP_SCREEN_ANIM, else PP_ANIM_NONE
+  PpPetReaction reaction;  // set for PP_SCREEN_PET_REACTION, else PP_REACT_NONE
+  bool lightScreen;        // the caller may light a dark screen for this action
 };
 
 PpScreenAction ppEventScreenAction(PpFeedbackEvent event, bool backlightOn, bool animationsOn);
+
+struct PpScreenContext {
+  bool backlightOn;
+  bool animationsOn;
+  bool gachiOn;
+  bool petOnStage;    // a pet exists and its arrival has been shown
+  bool berryRefused;  // this spin's berry did not fit (pantry was already full)
+};
+
+// Like ppEventScreenAction, but with PokeGachi on (and animations on) events
+// become pet reactions instead of the old animations. Otherwise identical.
+PpScreenAction ppEventScreenActionFor(PpFeedbackEvent event, const PpScreenContext& ctx);
 
 // Records a tap; true (and resets) on the kQuickTaps-th tap inside kQuickTapWindowMs
 // of the first. A tap outside the window starts a new window.

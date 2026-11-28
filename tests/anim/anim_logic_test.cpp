@@ -156,8 +156,155 @@ static void testScreenActionAnimationsOff()
   CHECK(ppEventScreenAction(PP_FEEDBACK_FLED, true, false).anim == PP_ANIM_NONE);
 }
 
+static PpScreenContext ctx(bool lit, bool anim, bool gachi, bool pet, bool refused)
+{
+  PpScreenContext c = { lit, anim, gachi, pet, refused };
+  return c;
+}
+
+static void testForMatchesOldWhenGachiOff()
+{
+  for (int e = 0; e <= PP_FEEDBACK_SPIN_FAILED; ++e) {
+    PpFeedbackEvent ev = static_cast<PpFeedbackEvent>(e);
+    for (int lit = 0; lit < 2; ++lit) {
+      for (int an = 0; an < 2; ++an) {
+        for (int pet = 0; pet < 2; ++pet) {
+          PpScreenAction old = ppEventScreenAction(ev, lit != 0, an != 0);
+          PpScreenAction now = ppEventScreenActionFor(ev, ctx(lit != 0, an != 0, false, pet != 0, false));
+          CHECK(now.kind == old.kind);
+          CHECK(now.anim == old.anim);
+          CHECK(now.reaction == PP_REACT_NONE);
+          CHECK(now.lightScreen == old.lightScreen);
+        }
+      }
+    }
+  }
+}
+
+static void testOldFillsNewFields()
+{
+  PpScreenAction a = ppEventScreenAction(PP_FEEDBACK_CAUGHT, false, true);
+  CHECK(a.kind == PP_SCREEN_NOTHING);
+  CHECK(!a.lightScreen);
+  a = ppEventScreenAction(PP_FEEDBACK_READY, false, true);
+  CHECK(a.kind == PP_SCREEN_ANIM && a.lightScreen && a.reaction == PP_REACT_NONE);
+  a = ppEventScreenAction(PP_FEEDBACK_BAG_FULL, false, true);
+  CHECK(a.kind == PP_SCREEN_LIGHT_WARNING && a.lightScreen);
+  a = ppEventScreenAction(PP_FEEDBACK_BAG_FULL, true, true);
+  CHECK(a.kind == PP_SCREEN_NOTHING && !a.lightScreen);
+}
+
+static void testForMatchesOldWhenAnimationsOff()
+{
+  for (int e = 0; e <= PP_FEEDBACK_SPIN_FAILED; ++e) {
+    PpFeedbackEvent ev = static_cast<PpFeedbackEvent>(e);
+    for (int lit = 0; lit < 2; ++lit) {
+      for (int pet = 0; pet < 2; ++pet) {
+        PpScreenAction old = ppEventScreenAction(ev, lit != 0, false);
+        PpScreenAction now = ppEventScreenActionFor(ev, ctx(lit != 0, false, true, pet != 0, true));
+        CHECK(now.kind == old.kind);
+        CHECK(now.anim == old.anim);
+        CHECK(now.reaction == PP_REACT_NONE);
+        CHECK(now.lightScreen == old.lightScreen);
+      }
+    }
+  }
+}
+
+static void testGachiNeverReturnsOldAnim()
+{
+  for (int e = 0; e <= PP_FEEDBACK_SPIN_FAILED; ++e) {
+    for (int lit = 0; lit < 2; ++lit) {
+      for (int pet = 0; pet < 2; ++pet) {
+        for (int ref = 0; ref < 2; ++ref) {
+          PpScreenAction a = ppEventScreenActionFor(static_cast<PpFeedbackEvent>(e), ctx(lit != 0, true, true, pet != 0, ref != 0));
+          CHECK(a.kind != PP_SCREEN_ANIM);
+        }
+      }
+    }
+  }
+}
+
+static void testGachiReactionsLit()
+{
+  PpScreenAction a = ppEventScreenActionFor(PP_FEEDBACK_CAUGHT, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_HAPPY && !a.lightScreen);
+  a = ppEventScreenActionFor(PP_FEEDBACK_FLED, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_FLOP);
+  a = ppEventScreenActionFor(PP_FEEDBACK_POKESTOP_SPUN, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_BERRY);
+  a = ppEventScreenActionFor(PP_FEEDBACK_POKESTOP_SPUN, ctx(true, true, true, true, true));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_BERRY_FULL);
+  a = ppEventScreenActionFor(PP_FEEDBACK_POKEMON_NEARBY, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_ALERT);
+  a = ppEventScreenActionFor(PP_FEEDBACK_READY, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_WAKE && !a.lightScreen);
+}
+
+static void testGachiNoPetNoReaction()
+{
+  const PpFeedbackEvent evs[] = { PP_FEEDBACK_CAUGHT, PP_FEEDBACK_FLED, PP_FEEDBACK_POKESTOP_SPUN,
+                                  PP_FEEDBACK_POKEMON_NEARBY, PP_FEEDBACK_READY };
+  for (PpFeedbackEvent ev : evs) {
+    PpScreenAction a = ppEventScreenActionFor(ev, ctx(true, true, true, false, false));
+    CHECK(a.kind == PP_SCREEN_NOTHING);
+    CHECK(!a.lightScreen);
+  }
+}
+
+static void testGachiDarkStaysDark()
+{
+  const PpFeedbackEvent evs[] = { PP_FEEDBACK_CAUGHT, PP_FEEDBACK_FLED, PP_FEEDBACK_POKESTOP_SPUN,
+                                  PP_FEEDBACK_POKEMON_NEARBY };
+  for (PpFeedbackEvent ev : evs) {
+    for (int pet = 0; pet < 2; ++pet) {
+      PpScreenAction a = ppEventScreenActionFor(ev, ctx(false, true, true, pet != 0, false));
+      CHECK(a.kind == PP_SCREEN_NOTHING);
+      CHECK(!a.lightScreen);
+    }
+  }
+}
+
+static void testGachiReadyLightsDark()
+{
+  PpScreenAction a = ppEventScreenActionFor(PP_FEEDBACK_READY, ctx(false, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_PET_REACTION && a.reaction == PP_REACT_WAKE && a.lightScreen);
+  a = ppEventScreenActionFor(PP_FEEDBACK_READY, ctx(false, true, true, false, false));
+  CHECK(a.kind == PP_SCREEN_LIGHT_HOME && a.lightScreen);
+}
+
+static void testGachiWarningsUnchanged()
+{
+  const PpFeedbackEvent evs[] = { PP_FEEDBACK_POKEMON_FULL, PP_FEEDBACK_BAG_FULL,
+                                  PP_FEEDBACK_STORAGE_FULL, PP_FEEDBACK_BALLS_EMPTY };
+  for (PpFeedbackEvent ev : evs) {
+    for (int pet = 0; pet < 2; ++pet) {
+      PpScreenAction d = ppEventScreenActionFor(ev, ctx(false, true, true, pet != 0, false));
+      CHECK(d.kind == PP_SCREEN_LIGHT_WARNING && d.lightScreen);
+      PpScreenAction l = ppEventScreenActionFor(ev, ctx(true, true, true, pet != 0, false));
+      CHECK(l.kind == PP_SCREEN_NOTHING && !l.lightScreen);
+    }
+  }
+}
+
+static void testPokestopNearbyIgnored()
+{
+  PpScreenAction a = ppEventScreenActionFor(PP_FEEDBACK_POKESTOP_NEARBY, ctx(true, true, true, true, false));
+  CHECK(a.kind == PP_SCREEN_NOTHING);
+}
+
 int main()
 {
+  testForMatchesOldWhenGachiOff();
+  testOldFillsNewFields();
+  testForMatchesOldWhenAnimationsOff();
+  testGachiNeverReturnsOldAnim();
+  testGachiReactionsLit();
+  testGachiNoPetNoReaction();
+  testGachiDarkStaysDark();
+  testGachiReadyLightsDark();
+  testGachiWarningsUnchanged();
+  testPokestopNearbyIgnored();
   testBootAndReset();
   testProgress();
   testWrap();
