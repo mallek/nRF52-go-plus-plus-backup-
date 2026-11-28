@@ -189,24 +189,82 @@ The PokeGachi page (also the PokeGachi row of the settings menu):
 After an action a result card shows for about 2 s, or until a press. A battle
 left alone ends with no result when the screen sleeps.
 
-Sprites: the pet art is not part of this project. You fetch it yourself from
-the PMD SpriteCollab sheets (fan-made, CC BY-NC, credits at
-https://sprites.pmdcollab.org/) with the sprite tool, which downloads the
-sheets into a local, gitignored cache and writes the sprite table with its
-animations:
+#### The living pet
+
+With PokeGachi on and Animations on, the home screen is a small stage: the
+pet stands on a meadow and idles whenever the screen is lit.
+
+- Reactions (only while the screen is already lit): a catch makes it hop with
+  hearts; a flee makes it flop with stars and get up; a spin drops a berry
+  beside it (with 10 berries the berry bounces away and the screen says
+  `full`); a Pokemon nearby gives a small jump and a `!`; GO finishing its
+  handshake wakes it with a hop.
+- Disconnecting lights the screen for about 5 s and shows the pet asleep on a
+  night meadow with Zzz. Reconnecting lights it again and the pet wakes with a
+  hop on the day meadow.
+- Feed shows the pet eating a berry (for the species that have an eating
+  animation; the others idle) before the result card.
+- Play shows the pet walking back and forth across one of four random scenes
+  (meadow, beach, forest, night camp) for about 5 s, then the result card.
+- Evolve flickers the stage between the old and new form, settles on the new
+  one, then shows the card.
+- Any button press skips a play walk or an evolve flicker and goes to the card.
+- With no pet yet, the stage shows an empty ball on the meadow.
+
+What plays when:
+
+| Setting | Catch, spin, ready | Home screen |
+| --- | --- | --- |
+| PokeGachi off | the device animations (ball closing, coin flip, ready) | the text status screen |
+| Animations OFF | no animation; the counters change only | the text status screen, or a still pet with PokeGachi on (no reactions; feed, play and evolve go straight to their cards) |
+| PokeGachi on, Animations on | the pet's reactions replace the device animations | the pet stage |
+
+Nothing but connecting, disconnecting and warnings (such as bag full) lights a
+dark screen. A catch, flee or spin with the screen dark leaves it dark; the
+counters are right when you wake it.
+
+#### Sprites and credits
+
+The pet art is not part of this project or its licence and is never committed.
+It comes from PMD SpriteCollab, which is CC BY-NC. You fetch it yourself with
+the sprite tool, which downloads the sheets into a local, gitignored cache and
+writes the sprite table with its animations:
 
 ```powershell
 python tools/sprites/gen_sprites.py code/nrf_emulator/pgpemu_xiao/pp_gachi_sprites.generated.h
 ```
 
 `pp_gachi_sprites.generated.h` and the cache are gitignored. Never commit them.
-To build without any art, write placeholder sprites instead (no download):
+The artists are credited at https://sprites.pmdcollab.org/. Keep any build that
+uses the art non-commercial and keep that credit with it.
+
+`--dummy` builds with no art (no download), writing placeholder sprites:
 
 ```powershell
 python tools/sprites/gen_sprites.py code/nrf_emulator/pgpemu_xiao/pp_gachi_sprites.generated.h --dummy
 ```
 
 With no generated file at all the firmware still builds and draws placeholders.
+
+#### Previewing on a PC
+
+The preview tool renders the real drawing code (no board needed) to PNG
+stills and animated GIFs of every pet scene and reaction. It uses whatever
+sprite table is in the sketch folder (placeholders if none). From WSL, with
+the Adafruit GFX library folder and an output folder that git ignores:
+
+```bash
+bash tests/preview/render.sh <Adafruit_GFX library dir> build/preview
+```
+
+Then, with a Python that has Pillow, turn the frames into images:
+
+```powershell
+python -I tests/preview/ppm_to_png.py build/preview
+```
+
+This writes a PNG per still, and a GIF plus a sheet of sampled frames per
+animated preview. Never commit the output.
 
 ### Identity table
 
