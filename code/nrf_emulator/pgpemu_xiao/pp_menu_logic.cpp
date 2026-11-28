@@ -221,3 +221,98 @@ uint8_t ppMenuRowCount(const PpMenuState& st, const PpMenu& menu)
   }
   return rowsOnPage(menu, *page);
 }
+
+namespace {
+
+const char* orEmpty(const char* s)
+{
+  return s != nullptr ? s : "";
+}
+
+const char* itemValue(const PpMenu& menu, const PpMenuItem& item)
+{
+  const PpMenuProvider* p = menu.provider;
+  if (p == nullptr) {
+    return "";
+  }
+  if (item.kind == PP_MENU_CHOICE) {
+    if (p->choiceCount == nullptr || p->choiceText == nullptr) {
+      return "";
+    }
+    uint8_t count = p->choiceCount(item.id);
+    if (count == 0) {
+      return "";
+    }
+    uint8_t current = p->choiceCurrent != nullptr ? p->choiceCurrent(item.id) : 0;
+    if (current >= count) {
+      current = 0;
+    }
+    return orEmpty(p->choiceText(item.id, current));
+  }
+  if (item.kind == PP_MENU_SUBMENU && p->valueText != nullptr) {
+    return orEmpty(p->valueText(item.id));
+  }
+  return "";
+}
+
+void fillRow(const PpMenu& menu, const PpMenuPage& page, uint8_t row, PpMenuRowView& out)
+{
+  out.label = "";
+  out.value = "";
+  out.isBack = false;
+  out.selected = false;
+  out.active = false;
+  if (row == 0) {
+    out.label = "Back";
+    out.isBack = true;
+    return;
+  }
+  uint8_t n = static_cast<uint8_t>(row - 1);
+  if (isListPage(page)) {
+    if (menu.provider != nullptr && menu.provider->listText != nullptr) {
+      out.label = orEmpty(menu.provider->listText(page.listId, n));
+    }
+    out.active = (n == listActive(menu, page));
+    return;
+  }
+  const PpMenuItem& item = page.items[n];
+  out.label = orEmpty(item.label);
+  out.value = itemValue(menu, item);
+}
+
+}  // namespace
+
+void ppMenuBuildView(const PpMenuState& st, const PpMenu& menu, uint8_t maxRows, PpMenuView& out)
+{
+  out.title = "";
+  out.firstRow = 0;
+  out.rowCount = 0;
+  out.totalRows = 0;
+  out.hintLeft = orEmpty(menu.hintLeft);
+  out.hintRight = orEmpty(menu.hintRight);
+  const PpMenuPage* page = currentPage(st, menu);
+  if (page == nullptr) {
+    return;
+  }
+  if (maxRows < 1) {
+    maxRows = 1;
+  }
+  if (maxRows > PP_MENU_MAX_VISIBLE) {
+    maxRows = PP_MENU_MAX_VISIBLE;
+  }
+  uint8_t total = rowsOnPage(menu, *page);
+  uint8_t cursor = st.cursor[st.depth];
+  if (cursor >= total) {
+    cursor = 0;
+  }
+  out.title = orEmpty(page->title);
+  out.totalRows = total;
+  out.firstRow = cursor < maxRows ? 0 : static_cast<uint8_t>(cursor - maxRows + 1);
+  uint8_t left = static_cast<uint8_t>(total - out.firstRow);
+  out.rowCount = left < maxRows ? left : maxRows;
+  for (uint8_t i = 0; i < out.rowCount; ++i) {
+    uint8_t row = static_cast<uint8_t>(out.firstRow + i);
+    fillRow(menu, *page, row, out.rows[i]);
+    out.rows[i].selected = (row == cursor);
+  }
+}

@@ -386,7 +386,179 @@ static void testSubmenuPageOutOfRange()
   CHECK(st.depth == 0);
 }
 
-// VIEW_TESTS
+// ---- view ----------------------------------------------------------------
+
+static int selectedCount(const PpMenuView& v)
+{
+  int n = 0;
+  for (uint8_t i = 0; i < v.rowCount; ++i) {
+    if (v.rows[i].selected) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+static void testViewTopPage()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.title, "SETTINGS") == 0);
+  CHECK(v.firstRow == 0);
+  CHECK(v.rowCount == 4);
+  CHECK(v.totalRows == 4);
+  CHECK(v.rows[0].isBack);
+  CHECK(std::strcmp(v.rows[0].label, "Back") == 0);
+  CHECK(std::strcmp(v.rows[0].value, "") == 0);
+  CHECK(!v.rows[1].isBack);
+  CHECK(std::strcmp(v.rows[1].label, "Identity") == 0);
+  CHECK(std::strcmp(v.rows[1].value, "TRAVIS") == 0);
+  CHECK(std::strcmp(v.rows[2].label, "Animations") == 0);
+  CHECK(std::strcmp(v.rows[2].value, "ON") == 0);
+  CHECK(std::strcmp(v.rows[3].value, "") == 0);
+  CHECK(v.rows[1].selected);
+  CHECK(selectedCount(v) == 1);
+  CHECK(std::strcmp(v.hintLeft, "A:select") == 0);
+  CHECK(std::strcmp(v.hintRight, "B:next") == 0);
+  gChoice = 1;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.rows[2].value, "OFF") == 0);
+}
+
+static void testViewListMarksActive()
+{
+  resetFixture();
+  gListActive = 1;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.title, "IDENTITY") == 0);
+  CHECK(v.rowCount == 4);
+  CHECK(v.rows[0].isBack);
+  CHECK(std::strcmp(v.rows[1].label, "N0") == 0);
+  CHECK(!v.rows[1].active);
+  CHECK(v.rows[2].active);
+  CHECK(v.rows[2].selected);
+  CHECK(!v.rows[3].active);
+  CHECK(selectedCount(v) == 1);
+}
+
+static void testViewScrolls()
+{
+  resetFixture();
+  gListCount = 7;  // 8 rows with Back
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 4, v);
+  CHECK(v.totalRows == 8);
+  CHECK(v.firstRow == 0);
+  CHECK(v.rowCount == 4);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);  // cursor 4
+  ppMenuBuildView(st, kMenu, 4, v);
+  CHECK(v.firstRow == 1);
+  CHECK(v.rows[3].selected);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);  // cursor 7, last row
+  ppMenuBuildView(st, kMenu, 4, v);
+  CHECK(v.firstRow == 4);
+  CHECK(v.rowCount == 4);
+  CHECK(v.rows[3].selected);
+  CHECK(std::strcmp(v.rows[3].label, "N6") == 0);
+  in(st, PP_MENU_IN_NEXT);  // wraps to Back
+  ppMenuBuildView(st, kMenu, 4, v);
+  CHECK(v.firstRow == 0);
+  CHECK(v.rows[0].isBack);
+  CHECK(v.rows[0].selected);
+}
+
+static void testViewEveryRowReachable()
+{
+  resetFixture();
+  gListCount = 7;
+  gListActive = PP_MENU_NONE;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  bool seen[8] = { false, false, false, false, false, false, false, false };
+  for (int step = 0; step < 8; ++step) {
+    PpMenuView v;
+    ppMenuBuildView(st, kMenu, 4, v);
+    CHECK(selectedCount(v) == 1);
+    uint8_t cursor = st.cursor[st.depth];
+    CHECK(cursor >= v.firstRow && cursor < v.firstRow + v.rowCount);
+    const PpMenuRowView& row = v.rows[cursor - v.firstRow];
+    CHECK(row.selected);
+    if (cursor == 0) {
+      CHECK(row.isBack);
+    } else {
+      CHECK(std::strcmp(row.label, fxListText(0, static_cast<uint8_t>(cursor - 1))) == 0);
+    }
+    seen[cursor] = true;
+    in(st, PP_MENU_IN_NEXT);
+  }
+  for (int i = 0; i < 8; ++i) {
+    CHECK(seen[i]);
+  }
+}
+
+static void testViewMaxRowsClamped()
+{
+  resetFixture();
+  gListCount = 7;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 0, v);
+  CHECK(v.rowCount == 1);
+  CHECK(v.rows[0].selected);
+  ppMenuBuildView(st, kMenu, 200, v);
+  CHECK(v.rowCount <= PP_MENU_MAX_VISIBLE);
+  CHECK(v.rowCount == 8);
+}
+
+static void testViewNullStrings()
+{
+  resetFixture();
+  gNullTexts = true;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(v.rows[1].value != nullptr && std::strcmp(v.rows[1].value, "") == 0);
+  CHECK(v.rows[2].value != nullptr && std::strcmp(v.rows[2].value, "") == 0);
+  in(st, PP_MENU_IN_SELECT);
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(v.rows[1].label != nullptr && std::strcmp(v.rows[1].label, "") == 0);
+
+  PpMenu bare = { kPages, 2, nullptr, nullptr, nullptr };
+  PpMenuState st2 = {};
+  ppMenuOpen(st2, bare, 1000);
+  ppMenuBuildView(st2, bare, 5, v);
+  CHECK(v.hintLeft != nullptr && v.hintRight != nullptr);
+  CHECK(std::strcmp(v.rows[2].value, "") == 0);
+}
+
+static void testViewClosed()
+{
+  resetFixture();
+  PpMenuState st = {};
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(v.rowCount == 0);
+  CHECK(v.totalRows == 0);
+  CHECK(std::strcmp(v.title, "") == 0);
+}
 
 int main()
 {
@@ -410,7 +582,13 @@ int main()
   testNullProviderPointers();
   testDepthLimit();
   testSubmenuPageOutOfRange();
-  // VIEW_CALLS
+  testViewTopPage();
+  testViewListMarksActive();
+  testViewScrolls();
+  testViewEveryRowReachable();
+  testViewMaxRowsClamped();
+  testViewNullStrings();
+  testViewClosed();
   if (failures == 0) {
     std::printf("menu_logic: all passed\n");
     return 0;

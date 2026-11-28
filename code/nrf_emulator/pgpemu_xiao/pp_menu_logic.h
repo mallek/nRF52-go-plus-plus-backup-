@@ -93,3 +93,27 @@ PpMenuResult ppMenuSelectRow(PpMenuState& st, const PpMenu& menu, uint8_t row, u
 PpMenuResult ppMenuTick(PpMenuState& st, uint32_t now);
 // Rows on the current page, including the Back row. 0 when closed.
 uint8_t ppMenuRowCount(const PpMenuState& st, const PpMenu& menu);
+
+// ---- view: what the screen draws -----------------------------------------
+
+struct PpMenuRowView {
+  const char* label;  // "Back" for the Back row; never nullptr
+  const char* value;  // "" when the row has none; never nullptr
+  bool isBack;
+  bool selected;  // the cursor is here
+  bool active;    // list row that is the current one
+};
+
+struct PpMenuView {
+  const char* title;
+  uint8_t firstRow;   // absolute index of rows[0], for mapping taps
+  uint8_t rowCount;   // rows filled
+  uint8_t totalRows;  // rows on the page
+  PpMenuRowView rows[PP_MENU_MAX_VISIBLE];
+  const char* hintLeft;
+  const char* hintRight;
+};
+
+// Fills `out` with up to maxRows rows (clamped to 1..PP_MENU_MAX_VISIBLE),
+// scrolled so the cursor row is always included. A closed menu gives 0 rows.
+void ppMenuBuildView(const PpMenuState& st, const PpMenu& menu, uint8_t maxRows, PpMenuView& out);
