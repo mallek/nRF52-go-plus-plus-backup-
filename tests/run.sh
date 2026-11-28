@@ -16,15 +16,16 @@ declare -A SRC=(
   [gachilogic]="gachi_logic_test.cpp:$SK/pp_gachi_logic.cpp $SK/pp_gachi_species.cpp"
   [gachibattle]="gachi_battle_test.cpp:$SK/pp_gachi_battle.cpp"
   [gachisave]="gachi_save_test.cpp:$SK/pp_gachi_save.cpp $SK/pp_gachi_logic.cpp $SK/pp_gachi_species.cpp"
+  [gachiflow]="gachi_flow_test.cpp:$SK/pp_gachi_flow.cpp $SK/pp_gachi_battle.cpp"
 )
 fail=0
-for dir in "${@:-anim settings menu feedback logstore sleep gachispecies gachilogic gachibattle gachisave}"; do
+for dir in "${@:-anim settings menu feedback logstore sleep gachispecies gachilogic gachibattle gachisave gachiflow}"; do
   for d in $dir; do
     entry="${SRC[$d]:-}"
     if [[ -z "$entry" ]]; then echo "unknown test folder: $d"; fail=1; continue; fi
     test="${entry%%:*}"; sources="${entry#*:}"
     folder="$d"; if [[ "$d" == "logstore" ]]; then folder="feedback"; fi
-    if [[ "$d" == "gachispecies" || "$d" == "gachilogic" || "$d" == "gachibattle" || "$d" == "gachisave" ]]; then folder="gachi"; fi
+    if [[ "$d" == "gachispecies" || "$d" == "gachilogic" || "$d" == "gachibattle" || "$d" == "gachisave" || "$d" == "gachiflow" ]]; then folder="gachi"; fi
     ( cd "$folder" && g++ -std=c++17 -Wall -Wextra -Werror -I"$SK" "$test" $sources -o /tmp/pp_test_$d && /tmp/pp_test_$d ) || fail=1
   done
 done
