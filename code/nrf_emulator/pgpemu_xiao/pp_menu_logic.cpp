@@ -161,6 +161,35 @@ void ppMenuOpen(PpMenuState& st, const PpMenu& menu, uint32_t now)
   st.cursor[0] = startCursor(menu, *top);
 }
 
+void ppMenuOpenAt(PpMenuState& st, const PpMenu& menu, uint8_t page, uint32_t now)
+{
+  ppMenuOpen(st, menu, now);
+  const PpMenuPage* target = pageAt(menu, page);
+  if (!st.open || page == 0 || target == nullptr || PP_MENU_MAX_DEPTH < 2) {
+    return;
+  }
+  const PpMenuPage* top = pageAt(menu, 0);
+  if (top != nullptr && !isListPage(*top)) {
+    uint8_t count = top->itemCount > 254 ? 254 : top->itemCount;
+    for (uint8_t i = 0; i < count; ++i) {
+      if (top->items[i].kind == PP_MENU_SUBMENU && top->items[i].page == page) {
+        st.cursor[0] = static_cast<uint8_t>(1 + i);
+        break;
+      }
+    }
+  }
+  st.depth = 1;
+  st.page[1] = page;
+  st.cursor[1] = startCursor(menu, *target);
+}
+
+void ppMenuKeepAlive(PpMenuState& st, uint32_t now)
+{
+  if (st.open) {
+    st.lastInputAt = now;
+  }
+}
+
 PpMenuResult ppMenuInput(PpMenuState& st, const PpMenu& menu, PpMenuInput in, uint32_t now)
 {
   const PpMenuPage* page = currentPage(st, menu);
@@ -249,10 +278,22 @@ const char* itemValue(const PpMenu& menu, const PpMenuItem& item)
     }
     return orEmpty(p->choiceText(item.id, current));
   }
-  if (item.kind == PP_MENU_SUBMENU && p->valueText != nullptr) {
+  if ((item.kind == PP_MENU_SUBMENU || item.kind == PP_MENU_ACTION) && p->valueText != nullptr) {
     return orEmpty(p->valueText(item.id));
   }
   return "";
+}
+
+const char* itemLabel(const PpMenu& menu, const PpMenuItem& item)
+{
+  const PpMenuProvider* p = menu.provider;
+  if (p != nullptr && p->labelText != nullptr) {
+    const char* over = p->labelText(item.id);
+    if (over != nullptr) {
+      return over;
+    }
+  }
+  return orEmpty(item.label);
 }
 
 void fillRow(const PpMenu& menu, const PpMenuPage& page, uint8_t row, PpMenuRowView& out)
@@ -276,7 +317,7 @@ void fillRow(const PpMenu& menu, const PpMenuPage& page, uint8_t row, PpMenuRowV
     return;
   }
   const PpMenuItem& item = page.items[n];
-  out.label = orEmpty(item.label);
+  out.label = itemLabel(menu, item);
   out.value = itemValue(menu, item);
 }
 

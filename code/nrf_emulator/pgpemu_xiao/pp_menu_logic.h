@@ -50,6 +50,9 @@ struct PpMenuProvider {
   uint8_t (*listCount)(uint8_t listId);
   const char* (*listText)(uint8_t listId, uint8_t n);
   uint8_t (*listActive)(uint8_t listId);  // PP_MENU_NONE if none
+  // May be nullptr. When it returns non-null for an item's id, that text
+  // replaces the item's static label.
+  const char* (*labelText)(uint8_t id);
 };
 
 struct PpMenu {
@@ -86,6 +89,13 @@ struct PpMenuResult {
 
 // Opens on the top page with the cursor on the first row after Back.
 void ppMenuOpen(PpMenuState& st, const PpMenu& menu, uint32_t now);
+// Opens the menu with `page` on top of the top page, so Back returns to the top
+// page. The top page's cursor is put on the SUBMENU row that leads to `page`
+// when there is one. An invalid page, or page 0, behaves as ppMenuOpen.
+void ppMenuOpenAt(PpMenuState& st, const PpMenu& menu, uint8_t page, uint32_t now);
+// Restarts the idle timeout without an input (the caller was busy showing
+// something else). Does nothing when the menu is closed.
+void ppMenuKeepAlive(PpMenuState& st, uint32_t now);
 PpMenuResult ppMenuInput(PpMenuState& st, const PpMenu& menu, PpMenuInput in, uint32_t now);
 // A tap on absolute row `row` (0 = Back): moves the cursor there, then SELECT.
 PpMenuResult ppMenuSelectRow(PpMenuState& st, const PpMenu& menu, uint8_t row, uint32_t now);
@@ -104,7 +114,7 @@ bool ppMenuTwoButtonInput(bool nextEdge, bool selectEdge, bool nextDown, bool se
 
 struct PpMenuRowView {
   const char* label;  // "Back" for the Back row; never nullptr
-  const char* value;  // "" when the row has none; never nullptr
+  const char* value;  // "" when the row has none; never nullptr. CHOICE, SUBMENU, ACTION rows
   bool isBack;
   bool selected;  // the cursor is here
   bool active;    // list row that is the current one

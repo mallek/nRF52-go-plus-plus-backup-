@@ -127,7 +127,8 @@ static uint8_t listActive(uint8_t listId)
 }
 
 static const PpMenuProvider kProvider = { choiceCount, choiceCurrent, choiceText, choiceSet,
-                                          valueText,   listCount,     listText,   listActive };
+                                          valueText,   listCount,     listText,   listActive,
+                                          nullptr };
 
 static const PpMenuItem kTopItems[] = {
   { "Identity", PP_MENU_SUBMENU, kIdIdentity, kPageIdentity },

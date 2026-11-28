@@ -47,12 +47,23 @@ static void fxChoiceSet(uint8_t, uint8_t n)
   gChoice = n;
   ++gSetCalls;
 }
-static const char* fxValueText(uint8_t)
+static const char* fxValueText(uint8_t id)
 {
   if (gNullTexts) {
     return nullptr;
   }
-  return "TRAVIS";
+  if (id == kActReset) {
+    return "3 berries";
+  }
+  return id == kIdIdentity ? "TRAVIS" : nullptr;
+}
+static bool gRetire = false;
+static const char* fxLabelText(uint8_t id)
+{
+  if (gRetire && id == kActReset) {
+    return "Retire";
+  }
+  return nullptr;
 }
 static uint8_t fxListCount(uint8_t) { return gListCount; }
 static const char* fxListText(uint8_t, uint8_t n)
@@ -66,8 +77,14 @@ static const char* fxListText(uint8_t, uint8_t n)
 static uint8_t fxListActive(uint8_t) { return gListActive; }
 
 static const PpMenuProvider kProvider = { fxChoiceCount, fxChoiceCurrent, fxChoiceText, fxChoiceSet,
-                                          fxValueText,   fxListCount,     fxListText,   fxListActive };
-static const PpMenuProvider kNullProvider = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+                                          fxValueText,   fxListCount,     fxListText,   fxListActive,
+                                          fxLabelText };
+static const PpMenuProvider kNullProvider = { nullptr, nullptr, nullptr, nullptr, nullptr,
+                                              nullptr, nullptr, nullptr, nullptr };
+// Same as kProvider but without a label override.
+static const PpMenuProvider kNoLabelProvider = { fxChoiceCount, fxChoiceCurrent, fxChoiceText, fxChoiceSet,
+                                                 fxValueText,   fxListCount,     fxListText,   fxListActive,
+                                                 nullptr };
 
 static const PpMenuItem kTopItems[] = {
   { "Identity", PP_MENU_SUBMENU, kIdIdentity, 1 },
@@ -102,6 +119,7 @@ static void resetFixture()
   gListCount = 3;
   gListActive = 0;
   gNullTexts = false;
+  gRetire = false;
 }
 
 static PpMenuResult in(PpMenuState& st, PpMenuInput input, uint32_t now = 1000)
@@ -418,7 +436,7 @@ static void testViewTopPage()
   CHECK(std::strcmp(v.rows[1].value, "TRAVIS") == 0);
   CHECK(std::strcmp(v.rows[2].label, "Animations") == 0);
   CHECK(std::strcmp(v.rows[2].value, "ON") == 0);
-  CHECK(std::strcmp(v.rows[3].value, "") == 0);
+  CHECK(std::strcmp(v.rows[3].value, "3 berries") == 0);  // ACTION rows show valueText too
   CHECK(v.rows[1].selected);
   CHECK(selectedCount(v) == 1);
   CHECK(std::strcmp(v.hintLeft, "A:select") == 0);
@@ -576,6 +594,134 @@ static void testTwoButtonInput()
   CHECK(!ppMenuTwoButtonInput(true, true, true, true, out));
 }
 
+// ---- additions: open at a page, action values, label override, keep-alive ---
+
+static void testOpenAtPage()
+{
+  resetFixture();
+  gListActive = 1;
+  PpMenuState st = {};
+  ppMenuOpenAt(st, kMenu, 1, 1000);
+  CHECK(st.open);
+  CHECK(st.depth == 1);
+  CHECK(st.page[0] == 0);
+  CHECK(st.page[1] == 1);
+  CHECK(st.cursor[0] == 1);  // the Identity row
+  CHECK(st.cursor[1] == 2);  // as a normal push places it: 1 + active
+  CHECK(st.lastInputAt == 1000);
+  CHECK(ppMenuRowCount(st, kMenu) == 4);
+  PpMenuResult r = in(st, PP_MENU_IN_BACK);
+  CHECK(r.outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+  CHECK(st.open);
+  CHECK(st.cursor[0] == 1);
+}
+
+static void testOpenAtInvalid()
+{
+  resetFixture();
+  PpMenuState ref = {};
+  ppMenuOpen(ref, kMenu, 1000);
+  PpMenuState a = {};
+  ppMenuOpenAt(a, kMenu, 9, 1000);
+  PpMenuState b = {};
+  ppMenuOpenAt(b, kMenu, 0, 1000);
+  const PpMenuState* both[2] = { &a, &b };
+  for (int i = 0; i < 2; ++i) {
+    CHECK(both[i]->open == ref.open);
+    CHECK(both[i]->depth == ref.depth);
+    CHECK(both[i]->lastInputAt == ref.lastInputAt);
+    for (uint8_t d = 0; d < PP_MENU_MAX_DEPTH; ++d) {
+      CHECK(both[i]->page[d] == ref.page[d]);
+      CHECK(both[i]->cursor[d] == ref.cursor[d]);
+    }
+  }
+  // No pages: does not open.
+  PpMenu empty = { nullptr, 0, &kProvider, "", "" };
+  PpMenuState c = {};
+  ppMenuOpenAt(c, empty, 1, 1000);
+  CHECK(!c.open);
+}
+
+static void testOpenAtPageWithoutSubmenuRow()
+{
+  // Page 1 is not reachable from the top page: Back still returns to the top
+  // page, whose cursor stays where a normal open puts it.
+  static const PpMenuItem items[] = { { "x", PP_MENU_ACTION, 1, 0 } };
+  static const PpMenuPage pages[] = { { "T", items, 1, 0 }, { "U", nullptr, 0, kListIdentity } };
+  PpMenu menu = { pages, 2, &kProvider, "", "" };
+  PpMenuState st = {};
+  ppMenuOpenAt(st, menu, 1, 1000);
+  CHECK(st.open);
+  CHECK(st.depth == 1);
+  CHECK(st.cursor[0] == 1);
+  CHECK(ppMenuInput(st, menu, PP_MENU_IN_BACK, 1000).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+}
+
+static void testActionRowShowsValue()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.rows[3].label, "Reset") == 0);
+  CHECK(std::strcmp(v.rows[3].value, "3 berries") == 0);
+  // Other kinds are unchanged.
+  CHECK(std::strcmp(v.rows[1].value, "TRAVIS") == 0);
+  CHECK(std::strcmp(v.rows[2].value, "ON") == 0);
+}
+
+static void testLabelOverride()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.rows[3].label, "Reset") == 0);
+  gRetire = true;
+  ppMenuBuildView(st, kMenu, 5, v);
+  CHECK(std::strcmp(v.rows[3].label, "Retire") == 0);
+  CHECK(std::strcmp(v.rows[1].label, "Identity") == 0);  // nullptr for other ids keeps the static label
+}
+
+static void testLabelOverrideNullProviderMember()
+{
+  resetFixture();
+  gRetire = true;
+  PpMenu menu = { kPages, 2, &kNoLabelProvider, "", "" };
+  PpMenuState st = {};
+  ppMenuOpen(st, menu, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, menu, 5, v);
+  CHECK(std::strcmp(v.rows[3].label, "Reset") == 0);
+  PpMenuState st2 = {};
+  ppMenuOpen(st2, kNullMenu, 1000);
+  ppMenuBuildView(st2, kNullMenu, 5, v);
+  CHECK(std::strcmp(v.rows[3].label, "Reset") == 0);
+}
+
+static void testKeepAlive()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  ppMenuKeepAlive(st, 15000);
+  CHECK(ppMenuTick(st, 34999).outcome == PP_MENU_OUT_NONE);
+  CHECK(st.open);
+  CHECK(ppMenuTick(st, 35000).outcome == PP_MENU_OUT_CLOSED);
+  CHECK(!st.open);
+
+  PpMenuState closed = {};
+  closed.lastInputAt = 77;
+  ppMenuKeepAlive(closed, 15000);
+  CHECK(!closed.open);
+  CHECK(closed.lastInputAt == 77);
+  CHECK(closed.depth == 0);
+}
+
 int main()
 {
   testOpenStartsAfterBack();
@@ -606,6 +752,13 @@ int main()
   testViewNullStrings();
   testViewClosed();
   testTwoButtonInput();
+  testOpenAtPage();
+  testOpenAtInvalid();
+  testOpenAtPageWithoutSubmenuRow();
+  testActionRowShowsValue();
+  testLabelOverride();
+  testLabelOverrideNullProviderMember();
+  testKeepAlive();
   if (failures == 0) {
     std::printf("menu_logic: all passed\n");
     return 0;
