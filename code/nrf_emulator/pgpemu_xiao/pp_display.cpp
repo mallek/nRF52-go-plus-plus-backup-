@@ -8,6 +8,7 @@
 #include "pp_menu_draw.h"
 #include "pp_menu_items.h"
 #include "pp_menu_logic.h"
+#include "pp_settings.h"
 
 #if PP_HAS_DISPLAY
 
@@ -437,7 +438,9 @@ void ppDisplayBegin()
   backlightUntil = millis() + kBacklightTimeoutMs;
   drawStatusFrame();
   drawStatusLines();
-  startAnim(PP_ANIM_BOOT, millis());
+  if (ppSettings().animations) {
+    startAnim(PP_ANIM_BOOT, millis());
+  }
   Serial.println("Display: ST7789 up");
 }
 
@@ -591,16 +594,22 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
   if (!started || mode != MODE_STATUS) {
     return;
   }
-  if (!backlightOn && !ppEventWakesScreen(event)) {
-    // Dark screen: catches and spins only count. Tap a button to look.
-    return;
-  }
+  // Dark screen: catches and spins only count. Tap a button to look. With the
+  // Animations setting off nothing plays and only warnings light the screen.
+  PpScreenAction action = ppEventScreenAction(event, backlightOn, ppSettings().animations);
   uint32_t now = millis();
-  PpAnimKind kind = ppAnimKindForEvent(event);
-  if (kind != PP_ANIM_NONE) {
-    startAnim(kind, now);
-  } else if (!backlightOn) {
-    touchBacklight(now, kWarningShowMs);
+  switch (action.kind) {
+    case PP_SCREEN_ANIM: {
+      startAnim(action.anim, now);
+      break;
+    }
+    case PP_SCREEN_LIGHT_WARNING: {
+      touchBacklight(now, kWarningShowMs);
+      break;
+    }
+    default: {
+      break;
+    }
   }
 }
 

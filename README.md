@@ -130,9 +130,25 @@ Controls:
 | --- | --- |
 | A or B | wake the screen |
 | hold A 5 s | factory reset (a bar fills while you hold) |
-| hold A+B 1.5 s | identity menu: B = next, A = select |
+| hold A+B 1.5 s | settings menu: B = next, A = select |
 
-Switching identity clears the pairing and reboots, so pair again in GO.
+Settings menu. `Back` is the first row of every list, and B cycles past the
+last row to it. The menu closes after 20 s without a press.
+
+| Setting | Values | What it does |
+| --- | --- | --- |
+| Identity | names in the build | opens the identity list; picking another one switches to it |
+| Animations | ON, OFF | OFF skips the catch, spin, ready and boot animations. Catches, spins and the GO handshake then neither light nor extend the screen; warnings such as bag full still do. Meant as a battery saver. |
+| PokeGachi | OFF, ON | stored only, nothing reads it yet |
+
+Settings are saved on the device and survive a reboot, an identity switch and
+a factory reset. Switching identity clears the pairing and reboots, so pair
+again in GO.
+
+Adding a setting is one field in `pp_settings_logic`, one setter in
+`pp_settings` and one table entry in `pp_menu_items.cpp`. The menu logic
+(`pp_menu_logic`) and the drawing (`pp_menu_draw`) do not change. Host tests
+for the logic: `bash tests/run.sh` from WSL.
 
 ### Identity table
 
