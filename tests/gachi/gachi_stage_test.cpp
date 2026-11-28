@@ -65,17 +65,14 @@ static void testInitIsEmpty()
 
 static void testIdleLoops()
 {
+  // A pet that has just become idle stands still at the centre first.
   PpStage st;
   idleStage(st, 1000);
-  CHECK(at(st, 1000).frame == 0);
-  CHECK(at(st, 1199).frame == 0);
-  CHECK(at(st, 1200).frame == 1);
-  CHECK(at(st, 1300).frame == 2);
-  CHECK(at(st, 1400).frame == 3);
-  CHECK(at(st, 1500).frame == 0);
-  CHECK(at(st, 1500).anim == PP_SANIM_IDLE);
-  CHECK(at(st, 1500).scene == PP_SCENE_MEADOW);
-  CHECK(!at(st, 1500).emptyBall);
+  PpStagePose p = at(st, 1000);
+  CHECK(p.anim == PP_SANIM_IDLE && p.frame == 0 && p.dx == 0 && p.dy == 0);
+  CHECK(p.scene == PP_SCENE_MEADOW && !p.emptyBall && !p.prop);
+  p = at(st, 1500);
+  CHECK(p.anim == PP_SANIM_IDLE && p.frame == 0 && p.dx == 0);
 }
 
 static void testChangedOnlyOnChange()
@@ -85,8 +82,7 @@ static void testChangedOnlyOnChange()
   PpStagePose p;
   CHECK(ppStagePose(st, T, 0, p));
   CHECK(!ppStagePose(st, T, 50, p));
-  CHECK(!ppStagePose(st, T, 199, p));
-  CHECK(ppStagePose(st, T, 200, p));
+  CHECK(!ppStagePose(st, T, 300, p));
 }
 
 static void testAsleepPose()
@@ -299,25 +295,165 @@ static void testBaseChangeDropsReaction()
 
 static void testPlayWalk()
 {
+  // Play is a chase: a prop moves through the scene and the pet runs after it.
   PpStage st;
   idleStage(st, 0);
   ppStageStartPlay(st, PP_SCENE_BEACH, 1000);
   PpStagePose p = at(st, 1000);
-  CHECK(p.scene == PP_SCENE_BEACH && p.anim == PP_SANIM_WALK);
-  CHECK(p.dx == -60 && !p.mirror && p.symbol == PP_SYM_NONE);
-  CHECK(at(st, 1000 + 1250).dx == 0);
-  p = at(st, 1000 + 2500);
-  CHECK(p.dx == 60 && !p.mirror);
-  p = at(st, 1000 + 3750);
-  CHECK(p.dx == 0 && p.mirror);
-  p = at(st, 1000 + 5000);
-  CHECK(p.dx == -60 && p.mirror);
+  CHECK(p.scene == PP_SCENE_BEACH && p.prop && p.propKind == PP_PROP_BALL);
+  bool sawLeft = false, sawRight = false, sawWalk = false;
+  for (uint32_t e = 0; e <= 5000; e += 50) {
+    p = at(st, 1000 + e);
+    CHECK(p.prop && p.scene == PP_SCENE_BEACH);
+    CHECK(p.dx >= -70 && p.dx <= 70);
+    CHECK(p.propX >= -60 && p.propX <= 60);
+    CHECK(p.propY < 0);
+    if (e < 4200) {
+      CHECK(p.symbol == PP_SYM_NONE);
+      CHECK(p.anim == PP_SANIM_WALK || (p.anim == PP_SANIM_IDLE && p.frame == 0));
+      if (p.anim == PP_SANIM_WALK) {
+        sawWalk = true;
+        if (p.mirror) {
+          sawLeft = true;
+        } else {
+          sawRight = true;
+        }
+      }
+    } else {
+      CHECK(p.anim == PP_SANIM_HOP);
+    }
+  }
+  CHECK(sawWalk && sawLeft && sawRight);
+  // By the time it jumps, the pet has caught up with the prop.
+  p = at(st, 1000 + 4200);
+  int gap = p.dx - p.propX;
+  CHECK(gap >= -16 && gap <= 16);
+  CHECK(at(st, 1000 + 4600).symbol == PP_SYM_HEARTS);
   CHECK(!ppStageMomentDone(st, 1000 + 4999));
   CHECK(ppStageMomentDone(st, 1000 + 5000));
   CHECK(ppStageBusy(st, 1000 + 4999));
   // holds its last pose until cancelled
+  PpStagePose last = at(st, 1000 + 5000);
   p = at(st, 1000 + 9000);
-  CHECK(p.dx == -60 && p.scene == PP_SCENE_BEACH);
+  CHECK(p.dx == last.dx && p.scene == PP_SCENE_BEACH && p.prop);
+}
+
+static void testChaseProps()
+{
+  PpStage st;
+  idleStage(st, 0);
+  CHECK(ppStagePropFor(PP_SCENE_MEADOW) == PP_PROP_BUTTERFLY);
+  CHECK(ppStagePropFor(PP_SCENE_BEACH) == PP_PROP_BALL);
+  CHECK(ppStagePropFor(PP_SCENE_FOREST) == PP_PROP_LEAF);
+  CHECK(ppStagePropFor(PP_SCENE_CAMP_NIGHT) == PP_PROP_FIREFLY);
+  ppStageStartPlay(st, PP_SCENE_CAMP_NIGHT, 100);
+  CHECK(at(st, 200).propKind == PP_PROP_FIREFLY);
+  // The same moment of a chase always looks the same.
+  PpStage a, b;
+  idleStage(a, 0);
+  idleStage(b, 500);
+  ppStageStartPlay(a, PP_SCENE_MEADOW, 1000);
+  ppStageStartPlay(b, PP_SCENE_MEADOW, 9000);
+  for (uint32_t e = 0; e <= 5000; e += 250) {
+    PpStagePose pa = at(a, 1000 + e), pb = at(b, 9000 + e);
+    CHECK(pa.dx == pb.dx && pa.propX == pb.propX && pa.propY == pb.propY && pa.anim == pb.anim && pa.mirror == pb.mirror);
+  }
+  // No prop outside play.
+  ppStageCancel(a);
+  CHECK(!at(a, 20000).prop);
+}
+
+static void testWanderStaysOnStage()
+{
+  PpStage st;
+  idleStage(st, 1000);
+  st.rng = 12345;
+  bool sawWalk = false, sawStill = false, sawBob = false, sawLeft = false, sawRight = false;
+  int16_t prevDx = 0;
+  bool first = true;
+  for (uint32_t t = 1000; t < 1000 + 300000; t += 50) {
+    PpStagePose p = at(st, t);
+    CHECK(p.dx >= -PP_STAGE_WALK_SPAN && p.dx <= PP_STAGE_WALK_SPAN);
+    CHECK(p.dy == 0 && !p.tipped && p.symbol == PP_SYM_NONE && !p.prop);
+    CHECK(p.anim == PP_SANIM_IDLE || p.anim == PP_SANIM_WALK);
+    if (p.anim == PP_SANIM_WALK) {
+      sawWalk = true;
+      if (!first && p.dx > prevDx) {
+        CHECK(!p.mirror);
+        sawRight = true;
+      }
+      if (!first && p.dx < prevDx) {
+        CHECK(p.mirror);
+        sawLeft = true;
+      }
+    } else {
+      if (p.frame == 0) {
+        sawStill = true;
+      } else {
+        sawBob = true;
+      }
+    }
+    prevDx = p.dx;
+    first = false;
+  }
+  CHECK(sawWalk && sawStill && sawBob && sawLeft && sawRight);
+}
+
+static void testWanderDeterministic()
+{
+  PpStage a, b;
+  idleStage(a, 1000);
+  idleStage(b, 1000);
+  a.rng = 777;
+  b.rng = 777;
+  for (uint32_t t = 1000; t < 61000; t += 100) {
+    PpStagePose pa = at(a, t), pb = at(b, t);
+    CHECK(pa.dx == pb.dx && pa.anim == pb.anim && pa.frame == pb.frame && pa.mirror == pb.mirror);
+  }
+}
+
+static void testNudgeStartsWalking()
+{
+  PpStage st;
+  idleStage(st, 1000);
+  st.rng = 99;
+  ppStageNudge(st, 5000);
+  PpStagePose p = at(st, 5200);
+  CHECK(p.anim == PP_SANIM_WALK);
+  // Nudging an empty, asleep, still or busy stage does nothing harmful.
+  PpStage e;
+  ppStageInit(e, 0);
+  ppStageNudge(e, 100);
+  CHECK(at(e, 200).emptyBall);
+  PpStage off;
+  idleStage(off, 0);
+  ppStageSetAnimations(off, false);
+  ppStageNudge(off, 100);
+  p = at(off, 500);
+  CHECK(p.anim == PP_SANIM_IDLE && p.frame == 0 && p.dx == 0);
+}
+
+static void testReactionKeepsSpot()
+{
+  PpStage st;
+  idleStage(st, 1000);
+  st.rng = 4242;
+  uint32_t t = 1000;
+  PpStagePose p = at(st, t);
+  while (t < 120000 && p.dx == 0) {
+    t += 50;
+    p = at(st, t);
+  }
+  CHECK(p.dx != 0);
+  int16_t spot = p.dx;
+  ppStageReact(st, PP_REACT_HAPPY, t);
+  for (uint32_t e = 0; e < 1500; e += 100) {
+    p = at(st, t + e);
+    CHECK(p.dx == spot && p.anim == PP_SANIM_HOP);
+  }
+  // After the reaction it carries on from where it stood.
+  p = at(st, t + 1500);
+  CHECK(p.dx == spot && p.anim == PP_SANIM_IDLE);
 }
 
 static void testPlayIgnoresReactions()
@@ -327,7 +463,7 @@ static void testPlayIgnoresReactions()
   ppStageStartPlay(st, PP_SCENE_FOREST, 1000);
   ppStageReact(st, PP_REACT_HAPPY, 1500);
   PpStagePose p = at(st, 1600);
-  CHECK(p.anim == PP_SANIM_WALK && p.symbol == PP_SYM_NONE && p.scene == PP_SCENE_FOREST);
+  CHECK(p.prop && p.symbol == PP_SYM_NONE && p.scene == PP_SCENE_FOREST && p.anim != PP_SANIM_HOP);
 }
 
 static void testEvolveFlicker()
@@ -362,7 +498,8 @@ static void testCancel()
   ppStageCancel(st);
   PpStagePose p = {};
   CHECK(ppStagePose(st, T, 1500, p));
-  CHECK(p.anim == PP_SANIM_IDLE && p.scene == PP_SCENE_MEADOW && p.dx == 0);
+  // Back to the wander on the home scene: no prop, standing or walking.
+  CHECK(!p.prop && p.scene == PP_SCENE_MEADOW && (p.anim == PP_SANIM_IDLE || p.anim == PP_SANIM_WALK));
   CHECK(!ppStageMomentDone(st, 9000));
   CHECK(!ppStageBusy(st, 1500));
 }
@@ -406,13 +543,19 @@ static void testMissingAnimationFallsBack()
 
 static void testAcrossWrap()
 {
+  // The wander keeps going, in bounds, across the millis() wrap.
   PpStage st;
   idleStage(st, 0xFFFFFF00u);
-  CHECK(at(st, 0xFFFFFF00u).frame == 0);
-  CHECK(at(st, 0xFFFFFF00u + 199).frame == 0);
-  CHECK(at(st, 0xFFFFFF00u + 200).frame == 1);
-  CHECK(at(st, 0xFFFFFF00u + 300).frame == 2);   // wrapped to 0x2C
-  CHECK(at(st, 0xFFFFFF00u + 500).frame == 0);
+  st.rng = 31337;
+  bool sawWalk = false;
+  for (uint32_t e = 0; e < 60000; e += 50) {
+    PpStagePose p = at(st, 0xFFFFFF00u + e);
+    CHECK(p.dx >= -PP_STAGE_WALK_SPAN && p.dx <= PP_STAGE_WALK_SPAN);
+    if (p.anim == PP_SANIM_WALK) {
+      sawWalk = true;
+    }
+  }
+  CHECK(sawWalk);
 
   PpStage s2;
   idleStage(s2, 0xFFFFFD00u);
@@ -536,6 +679,11 @@ int main()
   testNoReactionWhenEmpty();
   testBaseChangeDropsReaction();
   testPlayWalk();
+  testChaseProps();
+  testWanderStaysOnStage();
+  testWanderDeterministic();
+  testNudgeStartsWalking();
+  testReactionKeepsSpot();
   testPlayIgnoresReactions();
   testEvolveFlicker();
   testCancel();

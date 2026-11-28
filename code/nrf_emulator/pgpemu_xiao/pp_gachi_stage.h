@@ -16,6 +16,8 @@ enum PpStageScene : uint8_t {
 static constexpr uint8_t PP_SCENE_PLAY_COUNT = 4;
 enum PpStageSymbol : uint8_t { PP_SYM_NONE, PP_SYM_HEARTS, PP_SYM_STARS, PP_SYM_BERRY, PP_SYM_BERRY_BOUNCE, PP_SYM_ALERT, PP_SYM_ZZZ };
 enum PpStageMoment : uint8_t { PP_MOMENT_NONE, PP_MOMENT_PLAY, PP_MOMENT_EVOLVE };
+// What the pet chases during play. One per play scene for now; more can be added and cycled.
+enum PpStageProp : uint8_t { PP_PROP_BUTTERFLY, PP_PROP_BALL, PP_PROP_LEAF, PP_PROP_FIREFLY, PP_PROP_COUNT };
 
 static constexpr uint32_t PP_STAGE_PLAY_MS = 5000;
 static constexpr uint32_t PP_STAGE_EVOLVE_MS = 2500;
@@ -35,6 +37,9 @@ struct PpStagePose {
   bool tipped;          // lying on its side (Flop)
   PpStageSymbol symbol;
   uint16_t symbolProgress;   // 0..1000 through the symbol's own animation
+  bool prop;            // play: something to chase is on the stage
+  uint8_t propKind;     // a PpStageProp
+  int16_t propX, propY; // where it is, same units and origin as dx, dy
 };
 
 struct PpStage {
@@ -48,6 +53,12 @@ struct PpStage {
   PpStageScene momentScene;
   bool hasLast;
   PpStagePose last;
+  // Idle wander: the pet stands, bobs and walks to new spots. One segment at a time.
+  uint32_t rng;          // never 0
+  uint8_t wanderKind;
+  uint32_t wanderAt;
+  uint32_t wanderDur;
+  int16_t wanderFromX, wanderToX;
 };
 
 void ppStageInit(PpStage& st, uint32_t now);                    // EMPTY, animations on, nothing playing
@@ -56,6 +67,9 @@ void ppStageSetAnimations(PpStage& st, bool on);                // turning off d
 void ppStageReact(PpStage& st, PpPetReaction reaction, uint32_t now);
 void ppStageStartPlay(PpStage& st, PpStageScene scene, uint32_t now);
 void ppStageStartEvolve(PpStage& st, uint32_t now);
+// The screen has just been lit: an idle pet sets off on a walk, so a short glance sees it move.
+void ppStageNudge(PpStage& st, uint32_t now);
+PpStageProp ppStagePropFor(PpStageScene scene);
 void ppStageCancel(PpStage& st);                                // drops the reaction and the moment
 uint32_t ppStageReactionMs(PpPetReaction reaction);             // lengths from Global Constraints; NONE is 0
 bool ppStageBusy(const PpStage& st, uint32_t now);              // a reaction or moment is still playing

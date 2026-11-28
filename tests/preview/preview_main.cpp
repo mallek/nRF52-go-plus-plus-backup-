@@ -298,7 +298,17 @@ StageRun reactionRun(PpPetReaction reaction, PpStageBase base) {
 
 void renderStageGifs() {
   // Home idle, at both screen sizes.
-  recordStage("home_idle", petRun(PP_STAGE_IDLE));
+  {
+    // Twelve seconds of the idle wander, starting the way a wake does.
+    StageRun r = petRun(PP_STAGE_IDLE);
+    r.lengthMs = 12000;
+    r.setup = [](PpStage& st, uint32_t now) {
+      ppStageSetBase(st, PP_STAGE_IDLE, now);
+      st.rng = 2024;
+      ppStageNudge(st, now);
+    };
+    recordStage("home_idle", r);
+  }
   {
     StageRun r = petRun(PP_STAGE_IDLE);
     r.w = 172;

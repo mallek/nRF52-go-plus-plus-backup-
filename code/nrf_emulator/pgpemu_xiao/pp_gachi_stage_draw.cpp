@@ -721,6 +721,54 @@ void drawSymbol(Adafruit_GFX& gfx, int16_t sw, int16_t sh, const PpStagePose& po
   }
 }
 
+// What the pet chases during play. Drawn with shapes; the position comes from the pose.
+void drawProp(Adafruit_GFX& gfx, int16_t sw, int16_t groundY, const PpStagePose& pose)
+{
+  int16_t u = maxI(1, static_cast<int16_t>(sw / 120));   // 2 on a 240 wide stage
+  int16_t x = static_cast<int16_t>(sw / 2 + pose.propX * sw / 240);
+  int16_t y = static_cast<int16_t>(groundY + pose.propY * sw / 240);
+  bool beat = ((pose.propY + 64) % 4) < 2;                // flips as the prop bobs
+  switch (pose.propKind) {
+    case PP_PROP_BALL: {
+      int16_t r = static_cast<int16_t>(4 * u);
+      gfx.fillCircle(x, y, r, 0xFFFF);
+      gfx.fillRect(static_cast<int16_t>(x - r + 1), static_cast<int16_t>(y - u), static_cast<int16_t>(2 * r - 1),
+                   static_cast<int16_t>(2 * u), 0xF800);
+      gfx.fillCircle(x, y, u, 0x001F);
+      gfx.drawCircle(x, y, r, 0x4208);
+      break;
+    }
+    case PP_PROP_LEAF: {
+      int16_t a = static_cast<int16_t>(4 * u);
+      int16_t tilt = beat ? u : static_cast<int16_t>(-u);
+      gfx.fillTriangle(static_cast<int16_t>(x - a), static_cast<int16_t>(y + tilt), x, static_cast<int16_t>(y - 2 * u),
+                       static_cast<int16_t>(x + a), static_cast<int16_t>(y - tilt), 0xFC00);
+      gfx.fillTriangle(static_cast<int16_t>(x - a), static_cast<int16_t>(y + tilt), x, static_cast<int16_t>(y + 2 * u),
+                       static_cast<int16_t>(x + a), static_cast<int16_t>(y - tilt), 0xC2A0);
+      gfx.drawLine(static_cast<int16_t>(x - a), static_cast<int16_t>(y + tilt), static_cast<int16_t>(x + a),
+                   static_cast<int16_t>(y - tilt), 0x7180);
+      break;
+    }
+    case PP_PROP_FIREFLY: {
+      gfx.drawCircle(x, y, static_cast<int16_t>(beat ? 3 * u : 2 * u), 0x8C00);
+      gfx.fillCircle(x, y, u, beat ? 0xFFE0 : 0xFFF4);
+      break;
+    }
+    case PP_PROP_BUTTERFLY:
+    default: {
+      int16_t wing = static_cast<int16_t>(beat ? 4 * u : 2 * u);
+      int16_t tall = static_cast<int16_t>(3 * u);
+      gfx.fillTriangle(x, y, static_cast<int16_t>(x - wing), static_cast<int16_t>(y - tall),
+                       static_cast<int16_t>(x - wing), static_cast<int16_t>(y + tall), 0xF81F);
+      gfx.fillTriangle(x, y, static_cast<int16_t>(x + wing), static_cast<int16_t>(y - tall),
+                       static_cast<int16_t>(x + wing), static_cast<int16_t>(y + tall), 0xFD5F);
+      gfx.fillRect(x, static_cast<int16_t>(y - tall), maxI(1, static_cast<int16_t>(u / 2)), static_cast<int16_t>(2 * tall),
+                   0x2104);
+      break;
+    }
+  }
+}
+
 void putDex(char* buf, uint8_t v)
 {
   char tmp[4];
@@ -975,6 +1023,9 @@ void ppGachiStageDraw(Adafruit_GFX& canvas, int16_t sw, int16_t sh, const PpStag
     int16_t shadowW = pose.tipped ? static_cast<int16_t>(pet.tippedW / 2) : static_cast<int16_t>(pet.halfW * 8 / 10);
     fillEllipseIn(canvas, sw, sh, pet.cx, groundY, maxI(2, shadowW), maxI(1, s + s / 2), look.shadow);
     ppGachiDrawFrame(canvas, pet.cx, frameGround, scale, sprite, anim, frame, pose.mirror, pose.tipped);
+  }
+  if (pose.prop) {
+    drawProp(canvas, sw, groundY, pose);
   }
   drawSymbol(canvas, sw, sh, pose, pet, look.sky);
 }

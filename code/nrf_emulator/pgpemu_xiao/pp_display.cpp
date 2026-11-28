@@ -624,6 +624,8 @@ static void redrawAfterWake()
     // The animation draws its own frames and the status screen follows it.
     return;
   }
+  // The screen has just been lit: an idle pet sets off on a walk.
+  ppStageNudge(stage, millis());
   drawHomeScreen();
 }
 
