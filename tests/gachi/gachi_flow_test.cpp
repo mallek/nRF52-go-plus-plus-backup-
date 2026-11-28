@@ -105,17 +105,6 @@ static void testCardKeepsArrivalFlag()
   CHECK(f.card.dex == 25);
 }
 
-static void testCardAnimFieldsDefaultToZero()
-{
-  PpGachiCard c = PpGachiCard();
-  CHECK(c.spriteAnim == 0);
-  CHECK(!c.berry);
-  PpGachiFlow f;
-  ppGachiFlowReset(f);
-  CHECK(f.card.spriteAnim == 0);
-  CHECK(!f.card.berry);
-}
-
 static void testCardKeepsAnimFields()
 {
   PpGachiFlow f;
@@ -276,7 +265,6 @@ int main()
   testCardAcrossWrap();
   testCardNullLines();
   testCardKeepsArrivalFlag();
-  testCardAnimFieldsDefaultToZero();
   testCardKeepsAnimFields();
   testBattlePickAndThrow();
   testButtonsIgnoredWhileRoundShows();

@@ -646,8 +646,9 @@ static void playReaction(PpPetReaction reaction, bool lightScreen, uint32_t now)
   if (!backlightOn && !lightScreen) {
     return;
   }
-  touchBacklight(now, ppStageReactionMs(reaction) + kAfterAnimHoldMs);
+  // React first, so the first lit frame already shows the reaction's pose.
   ppStageReact(stage, reaction, now);
+  touchBacklight(now, ppStageReactionMs(reaction) + kAfterAnimHoldMs);
 }
 
 // page 0 opens on the top page; another page opens on top of it, so Back

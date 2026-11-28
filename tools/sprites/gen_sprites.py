@@ -288,6 +288,23 @@ def _pack_bytes(anim):
     return list(out)
 
 
+PIXEL_BYTES_WARN = 450000
+
+
+def pixel_bytes(sprites):
+    """(total pixel-data bytes written, shiny sprites sharing the normal's arrays)."""
+    total = 0
+    shared = 0
+    for sprite in sprites:
+        if sprite.get("shares"):
+            shared += 1
+            continue
+        for anim in sprite["anim"].values():
+            if anim is not None:
+                total += len(_pack_bytes(anim))
+    return total, shared
+
+
 def render_header(sprites, dummy=False):
     """sprites: list of dicts from build_sprite / dummy_sprite (after link_shiny)."""
     lines = []
@@ -439,6 +456,13 @@ def main(argv):
     with open(args.out_header, "w", newline="\n") as f:
         f.write(render_header(sprites, dummy=args.dummy))
     print("wrote %d sprites" % len(sprites))
+    total, shared = pixel_bytes(sprites)
+    print("pixel data: %d bytes; %d shiny sprites share pixel arrays with their normal sprite"
+          % (total, shared))
+    if total > PIXEL_BYTES_WARN:
+        print("WARNING: pixel data is over %d bytes (about 550 KB of flash is free for art)."
+              % PIXEL_BYTES_WARN)
+    print("Real-art flash use is unmeasured: compile once with the real art before flashing.")
     return 0
 
 

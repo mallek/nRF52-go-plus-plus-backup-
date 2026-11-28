@@ -194,16 +194,15 @@ left alone ends with no result when the screen sleeps.
 With PokeGachi on and Animations on, the home screen is a small stage: the
 pet stands on a meadow and idles whenever the screen is lit.
 
-- Reactions (only while the screen is already lit): a catch makes it hop with
+- Reactions (a dark screen stays dark for these): a catch makes it hop with
   hearts; a flee makes it flop with stars and get up; a spin drops a berry
   beside it (with 10 berries the berry bounces away and the screen says
-  `full`); a Pokemon nearby gives a small jump and a `!`; GO finishing its
-  handshake wakes it with a hop.
+  `full`); a Pokemon nearby gives a small jump and a `!`.
 - Disconnecting lights the screen for about 5 s and shows the pet asleep on a
-  night meadow with Zzz. Reconnecting lights it again and the pet wakes with a
-  hop on the day meadow.
-- Feed shows the pet eating a berry (for the species that have an eating
-  animation; the others idle) before the result card.
+  night meadow with Zzz. Reconnecting, when GO finishes its handshake, lights a
+  dark screen too and the pet wakes with a hop on the day meadow.
+- The Feed result card shows the pet eating a berry (for the species that have
+  an eating animation; the others idle); the animation plays on the card.
 - Play shows the pet walking back and forth across one of four random scenes
   (meadow, beach, forest, night camp) for about 5 s, then the result card.
 - Evolve flickers the stage between the old and new form, settles on the new

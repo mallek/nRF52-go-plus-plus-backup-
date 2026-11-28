@@ -231,6 +231,20 @@ def test_shiny_shares_pixels_in_header():
     assert s2["shares"] is False
 
 
+def test_pixel_bytes():
+    n = gen_sprites.build_sprite(raw_sprite(4, False))
+    s = gen_sprites.build_sprite(raw_sprite(4, True))
+    gen_sprites.link_shiny(n, s)
+    total, shared = gen_sprites.pixel_bytes([n, s])
+    expected = sum(len(gen_sprites._pack_bytes(a)) for a in n["anim"].values() if a is not None)
+    assert shared == 1
+    assert total == expected
+    assert total > 0
+    assert gen_sprites.pixel_bytes([]) == (0, 0)
+    s["shares"] = False
+    assert gen_sprites.pixel_bytes([n, s]) == (expected * 2, 0)
+
+
 def test_header_shape():
     sprites = [dummy_sprite(1, False), dummy_sprite(25, True)]
     text = render_header(sprites, dummy=True)
