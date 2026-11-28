@@ -64,6 +64,13 @@ bool ppStageMomentDone(const PpStage& st, uint32_t now);        // a moment was 
 // (always true on the first call after Init, SetBase, SetAnimations, React, Start or Cancel).
 bool ppStagePose(PpStage& st, const PpStageTimings& timings, uint32_t now, PpStagePose& out);
 
+// The frame of a looping animation `elapsed` ms after it began (a card's sprite uses it).
+// 0 when the animation has no frames or no usable times.
+uint8_t ppStageLoopFrame(const PpAnimTiming& t, uint32_t elapsed);
+// One of the four play scenes for a seed (the display passes micros()). The seed is mixed,
+// so nearby seeds spread over all four. A pure function: never the game's random state.
+PpStageScene ppStagePlayScene(uint32_t seed);
+
 // The base state the catcher calls for: EMPTY with no pet, else IDLE while GO is ready, else ASLEEP.
 PpStageBase ppStageBaseFor(bool hasPet, bool goReady);
 // Whether GO is ready after an event: READY sets it, DISCONNECTED clears it, anything else

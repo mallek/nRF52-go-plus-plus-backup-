@@ -45,26 +45,11 @@ uint32_t loopTotal(const PpAnimTiming& t)
 void resolveLoop(const PpStageTimings& timings, PpStageAnim want, uint32_t elapsed, PpStagePose& pose)
 {
   PpStageAnim use = want;
-  uint32_t total = loopTotal(timings.anim[use]);
-  if (total == 0) {
+  if (loopTotal(timings.anim[use]) == 0) {
     use = PP_SANIM_IDLE;
-    total = loopTotal(timings.anim[use]);
   }
   pose.anim = use;
-  pose.frame = 0;
-  if (total == 0) {
-    return;
-  }
-  const PpAnimTiming& t = timings.anim[use];
-  uint32_t pos = elapsed % total;
-  uint32_t acc = 0;
-  for (uint8_t i = 0; i < t.frames; ++i) {
-    acc += t.ms[i];
-    if (pos < acc) {
-      pose.frame = i;
-      return;
-    }
-  }
+  pose.frame = ppStageLoopFrame(timings.anim[use], elapsed);
 }
 
 bool reactionActive(const PpStage& st, uint32_t now)
@@ -306,6 +291,35 @@ bool ppStagePose(PpStage& st, const PpStageTimings& timings, uint32_t now, PpSta
   st.hasLast = true;
   out = p;
   return changed;
+}
+
+uint8_t ppStageLoopFrame(const PpAnimTiming& t, uint32_t elapsed)
+{
+  uint32_t total = loopTotal(t);
+  if (total == 0) {
+    return 0;
+  }
+  uint32_t pos = elapsed % total;
+  uint32_t acc = 0;
+  for (uint8_t i = 0; i < t.frames; ++i) {
+    acc += t.ms[i];
+    if (pos < acc) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+PpStageScene ppStagePlayScene(uint32_t seed)
+{
+  // A 32-bit finalising mix, so low-bit patterns in the seed do not pick the scene.
+  uint32_t x = seed;
+  x ^= x >> 16;
+  x *= 0x85ebca6bu;
+  x ^= x >> 13;
+  x *= 0xc2b2ae35u;
+  x ^= x >> 16;
+  return static_cast<PpStageScene>(x % PP_SCENE_PLAY_COUNT);
 }
 
 PpStageBase ppStageBaseFor(bool hasPet, bool goReady)

@@ -463,6 +463,59 @@ static void testGoReadyFollowsReadyAndDisconnect()
   CHECK(!ready);
 }
 
+static void testLoopFrame()
+{
+  const PpAnimTiming idle = {4, kIdleMs};   // 200, 100, 100, 100: 500 ms a loop
+  CHECK(ppStageLoopFrame(idle, 0) == 0);
+  CHECK(ppStageLoopFrame(idle, 199) == 0);
+  CHECK(ppStageLoopFrame(idle, 200) == 1);
+  CHECK(ppStageLoopFrame(idle, 299) == 1);
+  CHECK(ppStageLoopFrame(idle, 300) == 2);
+  CHECK(ppStageLoopFrame(idle, 499) == 3);
+  CHECK(ppStageLoopFrame(idle, 500) == 0);
+  CHECK(ppStageLoopFrame(idle, 700) == 1);
+  CHECK(ppStageLoopFrame(idle, 0xffffffffu) == ppStageLoopFrame(idle, 0xffffffffu % 500));
+  // Nothing usable: frame 0, never an index past the end.
+  const PpAnimTiming none = {0, nullptr};
+  CHECK(ppStageLoopFrame(none, 1234) == 0);
+  const PpAnimTiming noTimes = {3, nullptr};
+  CHECK(ppStageLoopFrame(noTimes, 1234) == 0);
+  static const uint16_t kZero[2] = {0, 0};
+  const PpAnimTiming zero = {2, kZero};
+  CHECK(ppStageLoopFrame(zero, 1234) == 0);
+}
+
+static void testPlaySceneSpreads()
+{
+  uint32_t counts[PP_SCENE_PLAY_COUNT] = {};
+  bool inRange = true;
+  for (uint32_t seed = 0; seed < 10000; ++seed) {
+    PpStageScene s = ppStagePlayScene(seed);
+    if (s >= PP_SCENE_PLAY_COUNT) {
+      inRange = false;
+      continue;
+    }
+    ++counts[s];
+  }
+  CHECK(inRange);
+  for (uint8_t i = 0; i < PP_SCENE_PLAY_COUNT; ++i) {
+    CHECK(counts[i] > 2000 && counts[i] < 3000);
+  }
+  // Seeds that step like a coarse microsecond clock (about 977 us a tick) still reach all four.
+  uint32_t coarse[PP_SCENE_PLAY_COUNT] = {};
+  for (uint32_t tick = 0; tick < 400; ++tick) {
+    PpStageScene s = ppStagePlayScene(tick * 977u);
+    if (s < PP_SCENE_PLAY_COUNT) {
+      ++coarse[s];
+    }
+  }
+  for (uint8_t i = 0; i < PP_SCENE_PLAY_COUNT; ++i) {
+    CHECK(coarse[i] > 50);
+  }
+  // The same seed gives the same scene: the pick is a pure function, not a game roll.
+  CHECK(ppStagePlayScene(123456u) == ppStagePlayScene(123456u));
+}
+
 int main()
 {
   testBaseFor();
@@ -489,6 +542,8 @@ int main()
   testMissingAnimationFallsBack();
   testAcrossWrap();
   testStaleReactionNeverShows();
+  testLoopFrame();
+  testPlaySceneSpreads();
   if (failures == 0) {
     std::printf("gachi_stage: all passed\n");
     return 0;

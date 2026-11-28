@@ -39,6 +39,6 @@ void ppDisplayOnFactoryReset();
 void ppDisplaySetSleepDeadline(bool armed, uint32_t atMs);
 void ppDisplayShutdown();
 
-// True while the menu, a PokeGachi card or battle, or a two-button gesture is
-// using the buttons, so the hold-A factory reset must not fire.
+// True while the menu, a PokeGachi card, battle, play walk or evolve flicker, or
+// a two-button gesture is using the buttons, so the hold-A factory reset must not fire.
 bool ppUiOwnsButtons();

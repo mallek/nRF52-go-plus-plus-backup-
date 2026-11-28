@@ -90,7 +90,9 @@ static Button buttonA = { PP_RESET_BUTTON_ARDUINO_PIN, false, false, 0, false };
 static Button buttonB = { PP_SECOND_BUTTON_ARDUINO_PIN, false, false, 0, false };
 
 // MODE_GACHI: a PokeGachi result card or battle owns the screen and the buttons.
-enum Mode : uint8_t { MODE_STATUS, MODE_MENU, MODE_GACHI };
+// MODE_MOMENT: the play walk or the evolve flicker on the home layout, before
+// its result card; it owns the buttons too, and any press skips it.
+enum Mode : uint8_t { MODE_STATUS, MODE_MENU, MODE_GACHI, MODE_MOMENT };
 
 static bool started = false;
 static Mode mode = MODE_STATUS;
@@ -135,6 +137,14 @@ static Mode flowReturn = MODE_STATUS;
 // A card keeps its line pointers until it closes, so a composed line (the
 // shiny arrival) lives here, not on the stack.
 static char cardLine[32];
+// The card's sprite animation (Animations on): when the card showed, the frame
+// on screen and when the frame was last checked.
+static uint32_t cardShownAt = 0;
+static uint8_t cardFrameShown = 0;
+static uint32_t cardPosedAt = 0;
+// The result card a play or evolve moment shows when it ends. The game result
+// it reports was applied and saved before the moment began.
+static PpGachiCard momentCard = {};
 
 static void readButton(Button& b, uint32_t now)
 {
@@ -270,6 +280,8 @@ static bool goReady = false;
 // the stage is redrawn at most about ten times a second.
 static uint32_t stagePosedAt = 0;
 static constexpr uint32_t kStageFrameMs = 100;
+// The form the pet is leaving, drawn during the evolve flicker; 0 otherwise.
+static uint8_t stageOldDex = 0;
 
 static PpStageBase stageBaseWanted()
 {
@@ -324,7 +336,7 @@ static bool drawStage(const PpStagePose& pose)
   const PpGachiState& st = ppGachiState();
   GFXcanvas16* canvas = ppAnimCanvas();
   if (canvas != nullptr) {
-    ppGachiStageDraw(*canvas, sw, sh, pose, st.petDex, st.petShiny, 0, kColors);
+    ppGachiStageDraw(*canvas, sw, sh, pose, st.petDex, st.petShiny, stageOldDex, kColors);
     if (ppGachiStagePush(tft, *canvas, x, y, sw, sh)) {
       return true;
     }
@@ -543,11 +555,54 @@ static void drawMenu()
 static void drawFlow()
 {
   if (flow.screen == PP_GSCREEN_CARD) {
+    // The whole card, with frame 0 of its sprite's animation.
     ppGachiDrawCard(tft, tft.width(), tft.height(), flow.card, kColors);
+    cardFrameShown = 0;
   } else if (flow.screen == PP_GSCREEN_BATTLE) {
     const PpGachiState& st = ppGachiState();
     ppGachiDrawBattle(tft, tft.width(), tft.height(), flow.battle, flow.roundShowing, st.petDex, st.petShiny, kColors);
   }
+}
+
+// One step of a card's sprite animation, while a card shows on a lit screen
+// with Animations on: redraws only the sprite area, only when the frame
+// changed, at most every kStageFrameMs. The battle screen never moves.
+static void tickCard(uint32_t now)
+{
+  if (flow.screen != PP_GSCREEN_CARD || flow.card.dex == 0 || !backlightOn || !ppSettings().animations) {
+    return;
+  }
+  if (static_cast<uint32_t>(now - cardPosedAt) < kStageFrameMs) {
+    return;
+  }
+  GFXcanvas16* canvas = ppAnimCanvas();
+  if (canvas == nullptr) {
+    // No canvas: the card keeps the frame it was drawn with.
+    return;
+  }
+  cardPosedAt = now;
+  PpStageAnim want = flow.card.spriteAnim < PP_SANIM_COUNT ? static_cast<PpStageAnim>(flow.card.spriteAnim) : PP_SANIM_IDLE;
+  const PpGachiAnim* a = ppGachiSpriteAnim(ppGachiSpriteFor(flow.card.dex, flow.card.shiny), want);
+  if (a == nullptr) {
+    // The placeholder: nothing moves.
+    return;
+  }
+  // A card shown later in this loop than `now` was read counts from 0.
+  uint32_t elapsed = static_cast<int32_t>(now - cardShownAt) > 0 ? now - cardShownAt : 0;
+  PpAnimTiming timing = { a->frames, a->ms };
+  uint8_t frame = ppStageLoopFrame(timing, elapsed);
+  if (frame == cardFrameShown) {
+    return;
+  }
+  cardFrameShown = frame;
+  // The card's sprite area lies in the upper band the stage also uses, and the
+  // card is plain background there apart from it; its text starts below the
+  // band. So the band is drawn whole in the canvas and pushed in one go.
+  int16_t w = tft.width();
+  int16_t band = ppGachiHomeLinesTop(tft.height());
+  canvas->fillRect(0, 0, w, band, kBg);
+  ppGachiDrawCardSprite(*canvas, w, tft.height(), flow.card, frame, kColors);
+  ppGachiStagePush(tft, *canvas, 0, 0, w, band);
 }
 
 static void redrawAfterWake()
@@ -558,6 +613,11 @@ static void redrawAfterWake()
   }
   if (mode == MODE_GACHI) {
     drawFlow();
+    return;
+  }
+  if (mode == MODE_MOMENT) {
+    // Not reached in practice (sleeping ends a moment), but never a blank screen.
+    drawStatusFrame();
     return;
   }
   if (anim.kind != PP_ANIM_NONE) {
@@ -653,7 +713,11 @@ static void enterFlow(Mode from)
 static void showCard(const PpGachiCard& card, Mode from, uint32_t now)
 {
   (void)now;
-  ppGachiFlowShowCard(flow, card, millis());
+  uint32_t shownAt = millis();
+  ppGachiFlowShowCard(flow, card, shownAt);
+  // The sprite's animation counts from the same moment.
+  cardShownAt = shownAt;
+  cardPosedAt = shownAt;
   enterFlow(from);
 }
 
@@ -694,6 +758,55 @@ static void showArrivalCard(uint32_t now)
   card.isArrival = true;
   Serial.println("Display: new pet card");
   showCard(card, MODE_STATUS, now);
+}
+
+// ---- Play and evolve moments (MODE_MOMENT) ----------------------------------
+//
+// A short full-stage scene on the home layout between a menu action and its
+// result card: the walk for Play, the flicker for an evolve. The game result
+// is applied and saved before one starts, so ending it early (a press, or the
+// screen sleeping) can neither lose it nor apply it twice. Only with
+// Animations on, a pet and the shared canvas; otherwise the card shows alone.
+
+// Starts a moment that shows `card` when it ends. False, with nothing changed,
+// when it cannot run; the caller then shows the card at once, as in step 1.
+static bool startMoment(bool evolve, uint8_t oldDex, const PpGachiCard& card)
+{
+  if (!ppSettings().animations || !ppGachiState().hasPet || ppAnimCanvas() == nullptr) {
+    return false;
+  }
+  // Timed from after the action's save, which can take over a second.
+  uint32_t now = millis();
+  // The stage's pet (an evolve just changed it), base and Animations setting.
+  syncStage(now);
+  if (evolve) {
+    ppStageStartEvolve(stage, now);
+  } else {
+    // A display pick from the clock, not a game roll: the game's random state is untouched.
+    ppStageStartPlay(stage, ppStagePlayScene(micros()), now);
+  }
+  if (stage.moment == PP_MOMENT_NONE) {
+    // The stage turned it down (Animations off, or no pet on it): never wait on it.
+    return false;
+  }
+  stageOldDex = evolve ? oldDex : 0;
+  momentCard = card;
+  anim.kind = PP_ANIM_NONE;
+  mode = MODE_MOMENT;
+  // The menu press that chose the action does nothing in the moment.
+  waitForRelease = true;
+  touchBacklight(now, playSleepMs());
+  Serial.println(evolve ? "Display: evolve moment" : "Display: play moment");
+  // The home layout, its stage already in the moment's first pose.
+  drawStatusFrame();
+  return true;
+}
+
+// Ends the moment and forgets it, so the stage reacts again afterwards.
+static void endMoment()
+{
+  ppStageCancel(stage);
+  stageOldDex = 0;
 }
 
 // Feed, Play, Battle and Evolve rows of the PokeGachi page.
@@ -743,6 +856,7 @@ static void runGachiAction(uint8_t id, uint32_t now)
       return;
     }
   }
+  // The result is applied and saved. Everything below only shows it.
   ppGachiResultText(action, result, line1, line2);
   PpGachiCard card = petCard(line1, line2);
   if (hadPet && !st.hasPet) {
@@ -750,6 +864,20 @@ static void runGachiAction(uint8_t id, uint32_t now)
     card.dex = dexBefore;
     card.shiny = shinyBefore;
     card.emptyBall = false;
+  }
+  bool animations = ppSettings().animations;
+  if (action == PP_GACHI_ACT_FEED && result == PP_GACHI_OK && animations) {
+    // The pet eats, a berry beside it. Refusals idle; Animations off is step 1's still.
+    card.spriteAnim = PP_SANIM_EAT;
+    card.berry = true;
+  }
+  // Play with a pet shows the walk whether or not it counted; only an evolve
+  // shows the flicker. Each falls back to the card alone when it cannot run.
+  if (hadPet && action == PP_GACHI_ACT_PLAY && startMoment(false, 0, card)) {
+    return;
+  }
+  if (hadPet && action == PP_GACHI_ACT_ADVANCE && result == PP_GACHI_EVOLVED && startMoment(true, dexBefore, card)) {
+    return;
   }
   showCard(card, MODE_MENU, now);
 }
@@ -821,6 +949,37 @@ static void updateFlow(uint32_t now)
   }
 }
 
+// One loop of a moment. It ends when its time is up or on any press, then its
+// result card shows and returns to the menu page as in step 1. The press that
+// skips is consumed: the card's waitForRelease keeps it from closing the card.
+static void updateMoment(uint32_t now)
+{
+  if (buttonA.pressedEdge || buttonB.pressedEdge || ppStageMomentDone(stage, now)) {
+    endMoment();
+    Serial.println("Display: moment over");
+    showCard(momentCard, MODE_MENU, now);
+    return;
+  }
+  // Catcher events during the moment changed the counters or the link word:
+  // the home lines under the stage follow, as on the home screen.
+  if (statusDirty || (countdownVisible() && sleepSecondsLeft(now) != countdownShown)) {
+    drawStatusLines();
+  }
+  tickStage(now);
+}
+
+// Screen sleep during a moment: the moment is dropped and no card shows, as a
+// card is dropped today; the result was saved before the moment began. The
+// menu under it closes, so the screen wakes on the home screen.
+static void leaveMomentForSleep()
+{
+  Serial.println("Display: moment dropped for sleep");
+  endMoment();
+  menuState.open = false;
+  mode = MODE_STATUS;
+  statusDirty = true;
+}
+
 // Screen sleep while a card or battle shows. A battle is abandoned with no
 // result; a card just closes, and an arrival card stays pending so it shows
 // again on the next lit home screen. A menu under it closes too, so the screen
@@ -844,6 +1003,8 @@ static void sleepIfDue(uint32_t now)
   }
   if (mode == MODE_GACHI) {
     leaveFlowForSleep();
+  } else if (mode == MODE_MOMENT) {
+    leaveMomentForSleep();
   } else if (mode == MODE_MENU) {
     // A card closed back to the menu on the loop the timer ran out: the menu
     // never stays open under a dark screen.
@@ -1015,13 +1176,18 @@ void ppDisplayUpdate()
   if (stage.reaction != PP_REACT_NONE && !stageOnScreen()) {
     ppStageCancel(stage);
   }
+  // A play or evolve moment lives only in MODE_MOMENT. Every way out ends it;
+  // this is the backstop, since a moment left set would block every reaction.
+  if (stage.moment != PP_MOMENT_NONE && mode != MODE_MOMENT) {
+    endMoment();
+  }
   readButton(buttonA, now);
   readButton(buttonB, now);
 
   if (buttonA.pressedEdge || buttonB.pressedEdge) {
     bool wasDark = !backlightOn;
     bool brief = mode == MODE_STATUS && !connected && everConnected;
-    uint32_t lit = mode == MODE_GACHI ? playSleepMs() : screenSleepMs();
+    uint32_t lit = (mode == MODE_GACHI || mode == MODE_MOMENT) ? playSleepMs() : screenSleepMs();
     touchBacklight(now, brief ? kDisconnectedShowMs : lit);
     if (wasDark) {
       // First press only wakes the screen.
@@ -1047,10 +1213,20 @@ void ppDisplayUpdate()
     return;
   }
 
+  if (mode == MODE_MOMENT) {
+    // The moment alone reads the buttons; a press ends it and nothing else.
+    updateMoment(now);
+    sleepIfDue(now);
+    return;
+  }
+
   if (mode == MODE_GACHI) {
     // The flow alone reads the buttons; a press that closes a card or ends
     // a battle is consumed there and the loop ends here.
     updateFlow(now);
+    if (mode == MODE_GACHI) {
+      tickCard(now);
+    }
     sleepIfDue(now);
     return;
   }
@@ -1303,7 +1479,8 @@ bool ppUiOwnsButtons()
   if (!started) {
     return false;
   }
-  return mode == MODE_MENU || mode == MODE_GACHI || buttonB.down || comboArmed || waitForRelease;
+  return mode == MODE_MENU || mode == MODE_GACHI || mode == MODE_MOMENT || buttonB.down || comboArmed ||
+         waitForRelease;
 }
 
 #else
