@@ -435,8 +435,38 @@ static void testStaleReactionNeverShows()
   CHECK(!ppStageBusy(st, 61000));
 }
 
+static void testBaseFor()
+{
+  CHECK(ppStageBaseFor(false, false) == PP_STAGE_EMPTY);
+  CHECK(ppStageBaseFor(false, true) == PP_STAGE_EMPTY);
+  CHECK(ppStageBaseFor(true, false) == PP_STAGE_ASLEEP);
+  CHECK(ppStageBaseFor(true, true) == PP_STAGE_IDLE);
+}
+
+static void testGoReadyFollowsReadyAndDisconnect()
+{
+  bool ready = false;
+  // The raw connect does not wake the pet; only READY does.
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_CONNECTED);
+  CHECK(!ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_READY);
+  CHECK(ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_CAUGHT);
+  CHECK(ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_CONNECTED);
+  CHECK(ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_DISCONNECTED);
+  CHECK(!ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_POKESTOP_SPUN);
+  CHECK(!ready);
+  ready = ppStageGoReadyAfter(ready, PP_FEEDBACK_CONNECTED);
+  CHECK(!ready);
+}
+
 int main()
 {
+  testBaseFor();
+  testGoReadyFollowsReadyAndDisconnect();
   testInitIsEmpty();
   testIdleLoops();
   testChangedOnlyOnChange();

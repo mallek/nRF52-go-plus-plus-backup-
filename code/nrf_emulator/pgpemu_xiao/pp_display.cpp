@@ -7,6 +7,9 @@
 #include "pp_gachi.h"
 #include "pp_gachi_flow.h"
 #include "pp_gachi_species.h"
+#include "pp_gachi_sprites.h"
+#include "pp_gachi_stage.h"
+#include "pp_gachi_stage_draw.h"
 #include "pp_gachi_text.h"
 #include "pp_gachi_ui.h"
 #include "pp_identity.h"
@@ -246,20 +249,134 @@ static const char* gachiLinkWord(uint16_t& color)
   return "WAITING";
 }
 
+// ---- The pet stage (PokeGachi on) -----------------------------------------
+//
+// The upper part of the pet face: a base state decided by the catcher, with at
+// most one reaction on top. Posed only while the home screen is lit and
+// Animations is on; with Animations off it is drawn once per home screen draw.
+
+static PpStage stage;
+static bool stageInited = false;
+// The current sprite's frame timings, and whose they are.
+static PpStageTimings stageTimings = {};
+static bool timingsLoaded = false;
+static bool timingsHasPet = false;
+static uint8_t timingsDex = 0;
+static bool timingsShiny = false;
+// GO finished its handshake (READY) since the last disconnect: the pet is awake.
+// The raw connect does not wake it.
+static bool goReady = false;
+// When the stage was last posed. The tick asks at most every kStageFrameMs, so
+// the stage is redrawn at most about ten times a second.
+static uint32_t stagePosedAt = 0;
+static constexpr uint32_t kStageFrameMs = 100;
+
+static PpStageBase stageBaseWanted()
+{
+  return ppStageBaseFor(ppGachiState().hasPet, goReady);
+}
+
+// Brings the stage in line with the pet, the Animations setting and the
+// catcher. Cheap: on every event, every home screen draw and every tick,
+// whether or not the stage is on screen.
+static void syncStage(uint32_t now)
+{
+  if (!stageInited) {
+    ppStageInit(stage, now);
+    stageInited = true;
+  }
+  const PpGachiState& st = ppGachiState();
+  bool petChanged = st.hasPet != timingsHasPet || (st.hasPet && (st.petDex != timingsDex || st.petShiny != timingsShiny));
+  if (!timingsLoaded || petChanged) {
+    ppGachiSpriteTimings(st.hasPet ? ppGachiSpriteFor(st.petDex, st.petShiny) : nullptr, stageTimings);
+    timingsLoaded = true;
+    timingsHasPet = st.hasPet;
+    timingsDex = st.petDex;
+    timingsShiny = st.petShiny;
+  }
+  bool animations = ppSettings().animations;
+  if (stage.animationsOn != animations) {
+    ppStageSetAnimations(stage, animations);
+  }
+  ppStageSetBase(stage, stageBaseWanted(), now);
+}
+
+// True while the stage is what the screen shows: the lit home screen with the
+// pet face and no old-style animation over it.
+static bool stageOnScreen()
+{
+  return started && mode == MODE_STATUS && backlightOn && anim.kind == PP_ANIM_NONE && ppGachiEnabled();
+}
+
+// Draws the stage at `pose` into the shared canvas and pushes it to the stage
+// rectangle. Without a canvas: the still pet (or the empty ball) on a plain
+// background, and false.
+static bool drawStage(const PpStagePose& pose)
+{
+  int16_t x = 0;
+  int16_t y = 0;
+  int16_t sw = 0;
+  int16_t sh = 0;
+  ppGachiStageRect(tft.width(), tft.height(), x, y, sw, sh);
+  if (sw <= 0 || sh <= 0) {
+    return false;
+  }
+  const PpGachiState& st = ppGachiState();
+  GFXcanvas16* canvas = ppAnimCanvas();
+  if (canvas != nullptr) {
+    ppGachiStageDraw(*canvas, sw, sh, pose, st.petDex, st.petShiny, 0, kColors);
+    if (ppGachiStagePush(tft, *canvas, x, y, sw, sh)) {
+      return true;
+    }
+  }
+  tft.fillRect(x, y, sw, sh, kBg);
+  if (st.hasPet) {
+    ppGachiDrawSprite(tft, x, y, sw, sh, st.petDex, st.petShiny, kColors);
+  } else {
+    int16_t r = static_cast<int16_t>((sw < sh ? sw : sh) * 28 / 100);
+    ppGachiDrawEmptyBall(tft, static_cast<int16_t>(x + sw / 2), static_cast<int16_t>(y + sh - sh * 18 / 100), r);
+  }
+  return false;
+}
+
+// One stage step from ppDisplayUpdate, while the stage is on screen and
+// Animations is on: redraws only when the pose changed.
+static void tickStage(uint32_t now)
+{
+  if (static_cast<uint32_t>(now - stagePosedAt) < kStageFrameMs) {
+    return;
+  }
+  if (ppAnimCanvas() == nullptr) {
+    // No canvas: the still drawn with the home screen stays.
+    return;
+  }
+  stagePosedAt = now;
+  syncStage(now);
+  if (stage.reaction != PP_REACT_NONE && !ppStageBusy(stage, now)) {
+    // The reaction is over: forget it, so a millis() wrap can never bring it back.
+    ppStageCancel(stage);
+  }
+  PpStagePose pose;
+  if (ppStagePose(stage, stageTimings, now, pose)) {
+    drawStage(pose);
+  }
+}
+
 // What the last full pet face drew above the lines band: the link word on the
-// top line and the sprite (or the empty ball).
+// top line, the pet (or the empty ball) and the stage's base state.
 static const char* frameLink = nullptr;
 static bool frameHasPet = false;
 static uint8_t frameDex = 0;
 static bool frameShiny = false;
+static PpStageBase frameBase = PP_STAGE_EMPTY;
 
-// True when the top line or the sprite on screen no longer matches the state,
+// True when the top line or the stage on screen no longer matches the state,
 // so a lines-only redraw would leave them stale.
 static bool gachiFrameStale()
 {
   uint16_t color = 0;
   const PpGachiState& st = ppGachiState();
-  if (gachiLinkWord(color) != frameLink || st.hasPet != frameHasPet) {
+  if (gachiLinkWord(color) != frameLink || st.hasPet != frameHasPet || stageBaseWanted() != frameBase) {
     return true;
   }
   return st.hasPet && (st.petDex != frameDex || st.petShiny != frameShiny);
@@ -303,13 +420,22 @@ static PpGachiHomeLines gachiHomeLines(uint32_t now)
 static void drawStatusFrame()
 {
   if (ppGachiEnabled()) {
-    PpGachiHomeLines lines = gachiHomeLines(millis());
+    uint32_t now = millis();
+    PpGachiHomeLines lines = gachiHomeLines(now);
     const PpGachiState& st = ppGachiState();
     ppGachiDrawHome(tft, tft.width(), tft.height(), st, lines, kColors);
+    // The stage at its pose now. With Animations off this is the only time it
+    // is drawn; with them on the tick takes over from this pose.
+    syncStage(now);
+    PpStagePose pose;
+    ppStagePose(stage, stageTimings, now, pose);
+    drawStage(pose);
+    stagePosedAt = now;
     frameLink = lines.topRight;
     frameHasPet = st.hasPet;
     frameDex = st.petDex;
     frameShiny = st.petShiny;
+    frameBase = stage.base;
     statusDirty = false;
     return;
   }
@@ -446,6 +572,22 @@ static void startAnim(PpAnimKind kind, uint32_t now)
   ppAnimStart(anim, kind, now);
   animFrameAt = now - kAnimFrameMs;
   touchBacklight(now, ppAnimDurationMs(kind) + kAfterAnimHoldMs);
+}
+
+// A pet reaction from a catcher event. It plays only on the home screen; with
+// an old-style animation playing it is dropped, never kept for later. A dark
+// screen is lit first only when the event may light it (READY); the lit time
+// then covers the reaction plus the same hold as the old animations.
+static void playReaction(PpPetReaction reaction, bool lightScreen, uint32_t now)
+{
+  if (mode != MODE_STATUS || anim.kind != PP_ANIM_NONE) {
+    return;
+  }
+  if (!backlightOn && !lightScreen) {
+    return;
+  }
+  touchBacklight(now, ppStageReactionMs(reaction) + kAfterAnimHoldMs);
+  ppStageReact(stage, reaction, now);
 }
 
 // page 0 opens on the top page; another page opens on top of it, so Back
@@ -867,6 +1009,12 @@ void ppDisplayUpdate()
     return;
   }
   uint32_t now = millis();
+  // A reaction belongs to the screen it began on. Once the stage is not
+  // showing (menu, card, battle, dark screen, an old animation) it is dropped,
+  // before a button press can wake the home screen and show the rest of it.
+  if (stage.reaction != PP_REACT_NONE && !stageOnScreen()) {
+    ppStageCancel(stage);
+  }
   readButton(buttonA, now);
   readButton(buttonB, now);
 
@@ -949,11 +1097,19 @@ void ppDisplayUpdate()
       }
     }
   }
+  // The stage sits above the lines band, clear of the reset bar, so it keeps
+  // moving while A is held. Nothing ticks on a dark screen or with Animations off.
+  if (stageOnScreen() && ppSettings().animations) {
+    tickStage(now);
+  }
   sleepIfDue(now);
 }
 
 void ppDisplayOnEvent(PpFeedbackEvent event)
 {
+  // First, so a screen lit by the disconnect below already shows the pet asleep.
+  goReady = ppStageGoReadyAfter(goReady, event);
+  bool linesChanged = true;
   switch (event) {
     case PP_FEEDBACK_CONNECTED: {
       connected = true;
@@ -1035,23 +1191,57 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       lastEventColor = kBad;
       break;
     }
+    case PP_FEEDBACK_POKEMON_NEARBY: {
+      // No text and no count: only the pet notices it. With PokeGachi off it
+      // does nothing, as before.
+      if (!ppGachiEnabled()) {
+        return;
+      }
+      linesChanged = false;
+      break;
+    }
     default: {
       return;
     }
   }
-  statusDirty = true;
+  if (linesChanged) {
+    statusDirty = true;
+  }
+  // The pet's base state follows every event, on screen or not.
+  syncStage(millis());
   // The menu, a PokeGachi card or a battle is never drawn over: the counts
-  // above are kept and the home screen shows them when it comes back.
+  // above are kept and the home screen shows them when it comes back. A pet
+  // reaction for such a moment is dropped, never played later.
   if (!started || mode != MODE_STATUS) {
     return;
   }
-  // Dark screen: catches and spins only count. Tap a button to look. With the
-  // Animations setting off nothing plays and only warnings light the screen.
-  PpScreenAction action = ppEventScreenAction(event, backlightOn, ppSettings().animations);
+  // Dark screen: catches, flees and spins only count. Tap a button to look.
+  // With the Animations setting off nothing plays and only warnings light the
+  // screen. With PokeGachi on the pet reacts instead of the old animations.
+  const PpGachiState& st = ppGachiState();
+  PpScreenContext ctx = {};
+  ctx.backlightOn = backlightOn;
+  ctx.animationsOn = ppSettings().animations;
+  ctx.gachiOn = ppGachiEnabled();
+  // A pet whose arrival card is still to come is not on the stage yet: the
+  // card is that catch's reaction.
+  ctx.petOnStage = st.hasPet && !st.arrivalPending;
+  ctx.berryRefused = event == PP_FEEDBACK_POKESTOP_SPUN && ppGachiLastGrant() != PP_GACHI_GRANT_BERRY;
+  PpScreenAction action = ppEventScreenActionFor(event, ctx);
   uint32_t now = millis();
   switch (action.kind) {
     case PP_SCREEN_ANIM: {
       startAnim(action.anim, now);
+      break;
+    }
+    case PP_SCREEN_PET_REACTION: {
+      playReaction(action.reaction, action.lightScreen, now);
+      break;
+    }
+    case PP_SCREEN_LIGHT_HOME: {
+      if (!backlightOn) {
+        touchBacklight(now);
+      }
       break;
     }
     case PP_SCREEN_LIGHT_WARNING: {
@@ -1071,6 +1261,7 @@ void ppDisplayOnFactoryReset()
   }
   connected = false;
   everConnected = false;
+  goReady = false;
   caught = 0;
   fled = 0;
   spun = 0;

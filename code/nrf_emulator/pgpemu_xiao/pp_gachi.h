@@ -14,6 +14,7 @@
 // from a BLE callback: events arrive through the feedback queue.
 void ppGachiBegin();                          // load or start fresh
 void ppGachiOnEvent(PpFeedbackEvent event);   // from the loop() dispatch in pp_feedback.cpp
+PpGachiGrant ppGachiLastGrant();              // what the most recent ppGachiOnEvent granted
 void ppGachiUpdate(uint32_t now);             // every loop(); runs the 30 minute grant save
 void ppGachiFlush();                          // save now if anything is unsaved
 

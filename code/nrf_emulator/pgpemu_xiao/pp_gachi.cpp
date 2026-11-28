@@ -18,6 +18,9 @@ static constexpr char kNewPath[] = "/gachi.new";
 static PpGachiState game;
 static bool dirty = false;
 static uint32_t dirtySince = 0;
+// What the last catcher event granted; the display reads it to tell a spin whose
+// berry did not fit.
+static PpGachiGrant lastGrant = PP_GACHI_GRANT_NONE;
 
 static uint32_t hardwareSeed()
 {
@@ -142,12 +145,18 @@ void ppGachiBegin()
 void ppGachiOnEvent(PpFeedbackEvent event)
 {
   PpGachiGrant grant = ppGachiOnEvent(game, event, ppGachiEnabled());
+  lastGrant = grant;
   if (grant != PP_GACHI_GRANT_NONE) {
     markDirty();
   }
   if (event == PP_FEEDBACK_DISCONNECTED) {
     ppGachiFlush();
   }
+}
+
+PpGachiGrant ppGachiLastGrant()
+{
+  return lastGrant;
 }
 
 void ppGachiUpdate(uint32_t now)

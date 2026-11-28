@@ -63,3 +63,9 @@ bool ppStageMomentDone(const PpStage& st, uint32_t now);        // a moment was 
 // The pose at `now`. Returns true when it differs from the pose returned by the previous call
 // (always true on the first call after Init, SetBase, SetAnimations, React, Start or Cancel).
 bool ppStagePose(PpStage& st, const PpStageTimings& timings, uint32_t now, PpStagePose& out);
+
+// The base state the catcher calls for: EMPTY with no pet, else IDLE while GO is ready, else ASLEEP.
+PpStageBase ppStageBaseFor(bool hasPet, bool goReady);
+// Whether GO is ready after an event: READY sets it, DISCONNECTED clears it, anything else
+// (the raw CONNECTED too) leaves it as it was.
+bool ppStageGoReadyAfter(bool goReady, PpFeedbackEvent event);

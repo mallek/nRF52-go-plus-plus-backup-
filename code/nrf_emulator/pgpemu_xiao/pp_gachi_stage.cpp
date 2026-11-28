@@ -307,3 +307,22 @@ bool ppStagePose(PpStage& st, const PpStageTimings& timings, uint32_t now, PpSta
   out = p;
   return changed;
 }
+
+PpStageBase ppStageBaseFor(bool hasPet, bool goReady)
+{
+  if (!hasPet) {
+    return PP_STAGE_EMPTY;
+  }
+  return goReady ? PP_STAGE_IDLE : PP_STAGE_ASLEEP;
+}
+
+bool ppStageGoReadyAfter(bool goReady, PpFeedbackEvent event)
+{
+  if (event == PP_FEEDBACK_READY) {
+    return true;
+  }
+  if (event == PP_FEEDBACK_DISCONNECTED) {
+    return false;
+  }
+  return goReady;
+}
