@@ -22,3 +22,7 @@ __pycache__/
 
 # Private design notes: never committed
 docs/private/
+
+# Generated sprite table and downloaded sprite cache - never commit (no game art)
+**/pp_gachi_sprites.generated.h
+tools/sprites/cache/
