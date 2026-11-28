@@ -105,6 +105,9 @@ static uint16_t fled = 0;
 static uint16_t spun = 0;
 static const char* lastEvent = "";
 static uint16_t lastEventColor = kDim;
+// lastEvent is a warning worth reading (POKEMON FULL, BAG FULL, NO BALLS, the
+// reset text). Only those take the counters' place on the pet face.
+static bool lastEventWarns = false;
 static bool statusDirty = true;
 
 static PpAnimState anim = { PP_ANIM_NONE, 0 };
@@ -247,7 +250,7 @@ static PpGachiHomeLines gachiHomeLines(uint32_t now)
     lines.pantryOverride = countdown;
     countdownShown = secs;
   }
-  if (lastEvent[0] != '\0') {
+  if (lastEventWarns && lastEvent[0] != '\0') {
     lines.bottom = lastEvent;
     lines.bottomColor = lastEventColor;
   } else {
@@ -645,6 +648,12 @@ static void sleepIfDue(uint32_t now)
   }
   if (mode == MODE_GACHI) {
     leaveFlowForSleep();
+  } else if (mode == MODE_MENU) {
+    // A card closed back to the menu on the loop the timer ran out: the menu
+    // never stays open under a dark screen.
+    menuState.open = false;
+    mode = MODE_STATUS;
+    statusDirty = true;
   }
   setBacklight(false);
 }
@@ -888,6 +897,7 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       connected = true;
       everConnected = true;
       lastEvent = "";
+      lastEventWarns = false;
       break;
     }
     case PP_FEEDBACK_DISCONNECTED: {
@@ -895,6 +905,7 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       if (everConnected) {
         // The state word says it; show the screen briefly, then go dark.
         lastEvent = "";
+        lastEventWarns = false;
         if (started && mode == MODE_STATUS) {
           touchBacklight(millis(), kDisconnectedShowMs);
         }
@@ -904,23 +915,27 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     case PP_FEEDBACK_CAUGHT: {
       ++caught;
       lastEvent = "caught!";
+      lastEventWarns = false;
       lastEventColor = kGood;
       break;
     }
     case PP_FEEDBACK_FLED: {
       ++fled;
       lastEvent = "fled";
+      lastEventWarns = false;
       lastEventColor = kBad;
       break;
     }
     case PP_FEEDBACK_POKESTOP_SPUN: {
       ++spun;
       lastEvent = "spun";
+      lastEventWarns = false;
       lastEventColor = ST77XX_CYAN;
       break;
     }
     case PP_FEEDBACK_POKEMON_FULL: {
       lastEvent = "POKEMON FULL";
+      lastEventWarns = true;
       lastEventColor = kAccent;
       break;
     }
@@ -928,11 +943,13 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
       connected = true;
       everConnected = true;
       lastEvent = "ready!";
+      lastEventWarns = false;
       lastEventColor = ST77XX_YELLOW;
       break;
     }
     case PP_FEEDBACK_BAG_FULL: {
       lastEvent = "BAG FULL";
+      lastEventWarns = true;
       lastEventColor = ST77XX_CYAN;
       break;
     }
@@ -940,16 +957,19 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     // decode against the game when the screen is already lit.
     case PP_FEEDBACK_SPIN_FAILED: {
       lastEvent = "spin failed";
+      lastEventWarns = false;
       lastEventColor = kDim;
       break;
     }
     case PP_FEEDBACK_STOP_PASSED: {
       lastEvent = "stop passed";
+      lastEventWarns = false;
       lastEventColor = kDim;
       break;
     }
     case PP_FEEDBACK_BALLS_EMPTY: {
       lastEvent = "NO BALLS";
+      lastEventWarns = true;
       lastEventColor = kBad;
       break;
     }
@@ -993,6 +1013,7 @@ void ppDisplayOnFactoryReset()
   fled = 0;
   spun = 0;
   lastEvent = "RESET - pair in GO";
+  lastEventWarns = true;
   lastEventColor = kAccent;
   statusDirty = true;
   holdFired = true;
