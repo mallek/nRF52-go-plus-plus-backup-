@@ -33,6 +33,17 @@ static uint32_t screenSleepMs()
   return ppSettingsScreenSleepMs(ppSettings());
 }
 
+// While a PokeGachi card or battle is on screen the player is reading or
+// thinking, so the screen stays lit at least this long whatever the Screen
+// sleep setting says. A short setting is for glances at the home screen.
+static constexpr uint32_t kPlayMinSleepMs = 30000;
+
+static uint32_t playSleepMs()
+{
+  uint32_t setting = screenSleepMs();
+  return setting > kPlayMinSleepMs ? setting : kPlayMinSleepMs;
+}
+
 static constexpr uint32_t kComboHoldMs = 1500;
 // After an animation the status screen stays lit this long.
 static constexpr uint32_t kAfterAnimHoldMs = 5000;
@@ -490,12 +501,17 @@ static void enterFlow(Mode from)
   flowReturn = from;
   mode = MODE_GACHI;
   waitForRelease = true;
+  touchBacklight(millis(), playSleepMs());
   drawFlow();
 }
 
+// The card's two seconds start when it is shown, not when the action began:
+// the action may have just saved to flash, which can take over a second, and
+// a card timed from before the save would flash by unread.
 static void showCard(const PpGachiCard& card, Mode from, uint32_t now)
 {
-  ppGachiFlowShowCard(flow, card, now);
+  (void)now;
+  ppGachiFlowShowCard(flow, card, millis());
   enterFlow(from);
 }
 
@@ -606,6 +622,8 @@ static void returnFromFlow(uint32_t now)
     ppMenuKeepAlive(menuState, now);
     drawMenu();
   } else {
+    // Back on the home screen: the normal Screen sleep time applies again.
+    backlightUntil = millis() + screenSleepMs();
     drawHomeScreen();
   }
 }
@@ -855,7 +873,8 @@ void ppDisplayUpdate()
   if (buttonA.pressedEdge || buttonB.pressedEdge) {
     bool wasDark = !backlightOn;
     bool brief = mode == MODE_STATUS && !connected && everConnected;
-    touchBacklight(now, brief ? kDisconnectedShowMs : screenSleepMs());
+    uint32_t lit = mode == MODE_GACHI ? playSleepMs() : screenSleepMs();
+    touchBacklight(now, brief ? kDisconnectedShowMs : lit);
     if (wasDark) {
       // First press only wakes the screen.
       buttonA.pressedEdge = false;
