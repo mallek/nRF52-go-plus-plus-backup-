@@ -14,7 +14,6 @@
 //   A or B         wake the screen for 30 s (5 s while disconnected)
 // A catch, flee or spin does not light a dark screen (battery); it only counts.
 // The animations play when the screen is already lit.
-//   B x5 in 2 s    easter egg
 void ppDisplayBegin();
 void ppDisplayUpdate();
 void ppDisplayOnEvent(PpFeedbackEvent event);

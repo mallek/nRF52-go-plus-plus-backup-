@@ -8,17 +8,16 @@
 // also by the host tests in tests/anim/.
 
 static constexpr uint32_t kAnimDurationMs = 2000;
-static constexpr uint32_t kEggDurationMs = 2500;
+static constexpr uint32_t kReadyDurationMs = 2500;
 static constexpr uint32_t kResetDurationMs = 3000;
-// Easter egg: this many B taps inside the window.
-static constexpr uint8_t kEggTaps = 5;
-static constexpr uint32_t kEggTapWindowMs = 2000;
+// Quick taps on B: this many inside the window.
+static constexpr uint8_t kQuickTaps = 5;
+static constexpr uint32_t kQuickTapWindowMs = 2000;
 
 enum PpAnimKind : uint8_t {
   PP_ANIM_NONE = 0,
   PP_ANIM_CATCH,
   PP_ANIM_SPIN,
-  PP_ANIM_EGG,
   PP_ANIM_READY,
   PP_ANIM_BOOT,
   PP_ANIM_RESET
@@ -68,6 +67,6 @@ struct PpScreenAction {
 
 PpScreenAction ppEventScreenAction(PpFeedbackEvent event, bool backlightOn, bool animationsOn);
 
-// Records a tap; true (and resets) on the kEggTaps-th tap inside kEggTapWindowMs
+// Records a tap; true (and resets) on the kQuickTaps-th tap inside kQuickTapWindowMs
 // of the first. A tap outside the window starts a new window.
 bool ppTapCounterTap(PpTapCounter& counter, uint32_t now);

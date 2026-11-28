@@ -301,63 +301,6 @@ static void drawReady(uint16_t p)
   }
 }
 
-// Easter egg: a sleepy giant rises from the bottom edge, snoozes a beat, sinks.
-static void drawEgg(uint16_t p)
-{
-  const uint16_t fur = rgb(38, 92, 112);
-  const uint16_t furDark = rgb(24, 62, 78);
-  const uint16_t cream = rgb(240, 226, 190);
-  const uint16_t ink = rgb(20, 30, 36);
-
-  int16_t d = popOffset(p, 2.0f * sinf(phase(p, 300, 720) * 6.2832f * 1.5f));  // slow breathing
-
-  // Arms, body, belly.
-  canvas->fillEllipse(30, 168 + d, 26, 40, fur);
-  canvas->fillEllipse(210, 168 + d, 26, 40, fur);
-  canvas->fillEllipse(kCx, 190 + d, 92, 84, fur);
-  canvas->fillEllipse(kCx, 200 + d, 70, 66, cream);
-
-  // Ears, then head.
-  canvas->fillTriangle(72, 62 + d, 80, 22 + d, 104, 48 + d, fur);
-  canvas->fillTriangle(168, 62 + d, 160, 22 + d, 136, 48 + d, fur);
-  canvas->fillTriangle(80, 34 + d, 84, 28 + d, 92, 44 + d, furDark);
-  canvas->fillTriangle(160, 34 + d, 156, 28 + d, 148, 44 + d, furDark);
-  canvas->fillEllipse(kCx, 84 + d, 58, 48, fur);
-
-  // Face patch with the pointed hairline.
-  canvas->fillEllipse(kCx, 98 + d, 44, 32, cream);
-  canvas->fillTriangle(kCx - 16, 66 + d, kCx + 16, 66 + d, kCx, 82 + d, fur);
-
-  // Closed eyes, two pixels thick.
-  for (int16_t k = 0; k < 2; ++k) {
-    canvas->drawFastHLine(kCx - 30, 92 + d + k, 18, ink);
-    canvas->drawFastHLine(kCx + 12, 92 + d + k, 18, ink);
-  }
-  // Content little mouth with two tiny teeth.
-  canvas->drawLine(kCx - 12, 110 + d, kCx, 114 + d, ink);
-  canvas->drawLine(kCx, 114 + d, kCx + 12, 110 + d, ink);
-  canvas->fillTriangle(kCx - 9, 110 + d, kCx - 5, 110 + d, kCx - 7, 106 + d, ST77XX_WHITE);
-  canvas->fillTriangle(kCx + 5, 110 + d, kCx + 9, 110 + d, kCx + 7, 106 + d, ST77XX_WHITE);
-
-  // Zzz drifting up while it is up.
-  if (p >= 300 && p < 760) {
-    float t = phase(p, 300, 760);
-    canvas->setTextColor(ST77XX_WHITE);
-    canvas->setTextWrap(false);
-    static const int16_t zx[3] = { 172, 188, 204 };
-    static const int16_t zy[3] = { 52, 30, 8 };
-    static const uint8_t zs[3] = { 2, 3, 4 };
-    for (uint8_t i = 0; i < 3; ++i) {
-      // Each z appears in turn.
-      if (t * 3.0f >= i) {
-        canvas->setTextSize(zs[i]);
-        canvas->setCursor(zx[i], zy[i] + d - static_cast<int16_t>(6.0f * t));
-        canvas->print("z");
-      }
-    }
-  }
-}
-
 static void canvasText(const char* text, int16_t y, uint8_t size, uint16_t color)
 {
   canvas->setTextSize(size);
@@ -462,8 +405,6 @@ bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
     drawCatch(progress);
   } else if (kind == PP_ANIM_SPIN) {
     drawSpin(progress);
-  } else if (kind == PP_ANIM_EGG) {
-    drawEgg(progress);
   } else if (kind == PP_ANIM_READY) {
     drawReady(progress);
   } else if (kind == PP_ANIM_BOOT) {

@@ -5,7 +5,7 @@ uint32_t ppAnimDurationMs(PpAnimKind kind)
   if (kind == PP_ANIM_RESET) {
     return kResetDurationMs;
   }
-  return (kind == PP_ANIM_EGG || kind == PP_ANIM_READY) ? kEggDurationMs : kAnimDurationMs;
+  return kind == PP_ANIM_READY ? kReadyDurationMs : kAnimDurationMs;
 }
 
 void ppAnimStart(PpAnimState& state, PpAnimKind kind, uint32_t now)
@@ -68,13 +68,13 @@ bool ppEventWakesScreen(PpFeedbackEvent event)
 
 bool ppTapCounterTap(PpTapCounter& counter, uint32_t now)
 {
-  if (counter.count == 0 || (now - counter.firstAt) > kEggTapWindowMs) {
+  if (counter.count == 0 || (now - counter.firstAt) > kQuickTapWindowMs) {
     counter.count = 1;
     counter.firstAt = now;
     return false;
   }
   ++counter.count;
-  if (counter.count >= kEggTaps) {
+  if (counter.count >= kQuickTaps) {
     counter.count = 0;
     return true;
   }

@@ -102,7 +102,6 @@ static bool statusDirty = true;
 
 static PpAnimState anim = { PP_ANIM_NONE, 0 };
 static uint32_t animFrameAt = 0;
-static PpTapCounter eggTaps = { 0, 0 };
 
 static void readButton(Button& b, uint32_t now)
 {
@@ -492,11 +491,6 @@ void ppDisplayUpdate()
     updateCombo(now);
   }
   updateResetHold(now);
-  // Easter egg: five quick B taps on the status screen.
-  if (mode == MODE_STATUS && buttonB.pressedEdge && !buttonA.down && ppTapCounterTap(eggTaps, now)) {
-    Serial.println("Display: easter egg");
-    startAnim(PP_ANIM_EGG, now);
-  }
   if (anim.kind != PP_ANIM_NONE && mode == MODE_STATUS) {
     if (ppAnimDone(anim, now)) {
       anim.kind = PP_ANIM_NONE;

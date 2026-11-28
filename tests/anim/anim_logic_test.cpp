@@ -63,13 +63,13 @@ static void testEventMap()
   CHECK(std::strcmp(ppFeedbackEventName(PP_FEEDBACK_READY), "ready") == 0);
 }
 
-static void testEggDuration()
+static void testReadyDuration()
 {
   CHECK(ppAnimDurationMs(PP_ANIM_CATCH) == 2000);
   CHECK(ppAnimDurationMs(PP_ANIM_SPIN) == 2000);
-  CHECK(ppAnimDurationMs(PP_ANIM_EGG) == 2500);
+  CHECK(ppAnimDurationMs(PP_ANIM_READY) == kReadyDurationMs);
   PpAnimState s = { PP_ANIM_NONE, 0 };
-  ppAnimStart(s, PP_ANIM_EGG, 1000);
+  ppAnimStart(s, PP_ANIM_READY, 1000);
   CHECK(ppAnimProgress(s, 2250) == 500);
   CHECK(!ppAnimDone(s, 3000));
   CHECK(!ppAnimDone(s, 3499));
@@ -83,6 +83,8 @@ static void testTapCounter()
   CHECK(!ppTapCounterTap(t, 300));
   CHECK(!ppTapCounterTap(t, 500));
   CHECK(!ppTapCounterTap(t, 700));
+  CHECK(kQuickTaps == 5);
+  CHECK(kQuickTapWindowMs == 2000);
   CHECK(ppTapCounterTap(t, 900));    // fifth tap inside 2 s fires
   CHECK(t.count == 0);               // and resets
   // Too slow: the window restarts at the tap that fell outside it.
@@ -161,7 +163,7 @@ int main()
   testWrap();
   testRestart();
   testEventMap();
-  testEggDuration();
+  testReadyDuration();
   testTapCounter();
   testDarkScreenWake();
   testScreenActionAnimationsOn();
