@@ -5,6 +5,9 @@
 #include "pp_anim_logic.h"
 #include "pp_display.h"
 #include "pp_identity.h"
+#include "pp_menu_draw.h"
+#include "pp_menu_items.h"
+#include "pp_menu_logic.h"
 
 #if PP_HAS_DISPLAY
 
@@ -19,7 +22,6 @@
 namespace {
 
 static constexpr uint32_t kComboHoldMs = 1500;
-static constexpr uint32_t kMenuTimeoutMs = 20000;
 static constexpr uint32_t kBacklightTimeoutMs = 30000;
 // After an animation the status screen stays lit this long.
 static constexpr uint32_t kAfterAnimHoldMs = 5000;
@@ -68,8 +70,7 @@ static Mode mode = MODE_STATUS;
 static bool comboArmed = false;
 static uint32_t comboStartedAt = 0;
 static bool waitForRelease = false;
-static uint8_t menuIndex = 0;
-static uint32_t menuActivityAt = 0;
+static PpMenuState menuState = {};
 static bool backlightOn = true;
 static uint32_t backlightUntil = 0;
 static uint32_t panelSleptAt = 0;
@@ -196,9 +197,7 @@ static void drawStatusFrame()
   centerText(name, 70 - (size * 8) / 2, size, kAccent);
   // Each hint sits on the side of the button it names: A left, B right.
   leftText("A hold: reset", 226, 1, kDim);
-  if (ppIdentityCount() > 1) {
-    centerText("A+B: menu", 226, 1, kDim);
-  }
+  centerText("A+B: menu", 226, 1, kDim);
   rightText("B: wake", 226, 1, kDim);
   statusDirty = true;
 }
@@ -267,28 +266,10 @@ static void drawResetHold(uint32_t heldMs, bool first)
 
 static void drawMenu()
 {
-  tft.fillScreen(kBg);
-  centerText("SWITCH IDENTITY", 6, 2, kDim);
-  uint8_t count = ppIdentityCount();
-  int16_t rowH = 32;
-  int16_t top = 40;
-  for (uint8_t i = 0; i < count && i < 5; ++i) {
-    int16_t y = top + i * rowH;
-    bool selected = (i == menuIndex);
-    if (selected) {
-      tft.fillRect(10, y - 4, 220, rowH - 2, kAccent);
-    }
-    tft.setTextSize(3);
-    tft.setTextColor(selected ? kBg : kFg, selected ? kAccent : kBg);
-    tft.setCursor(20, y);
-    tft.print(ppIdentityName(i));
-    if (i == ppIdentityActive()) {
-      tft.print(" *");
-    }
-  }
-  // Each hint sits on the side of the button it names: A left, B right.
-  leftText("A:select", 214, 2, kDim);
-  rightText("B:next", 214, 2, kDim);
+  static const PpMenuColors colors = { kBg, kFg, kDim, kAccent };
+  PpMenuView view;
+  ppMenuBuildView(menuState, ppSettingsMenu(), ppMenuRowsThatFit(tft.height()), view);
+  ppMenuDraw(tft, tft.width(), tft.height(), view, colors);
 }
 
 static void redrawAfterWake()
@@ -315,12 +296,11 @@ static void startAnim(PpAnimKind kind, uint32_t now)
 static void openMenu(uint32_t now)
 {
   anim.kind = PP_ANIM_NONE;
+  ppMenuOpen(menuState, ppSettingsMenu(), now);
   mode = MODE_MENU;
-  menuIndex = ppIdentityActive();
-  menuActivityAt = now;
   waitForRelease = true;
   touchBacklight(now);
-  Serial.println("Display: identity menu open");
+  Serial.println("Display: settings menu open");
   drawMenu();
 }
 
@@ -331,30 +311,56 @@ static void closeMenu()
   drawStatusFrame();
 }
 
+static void switchIdentity(uint8_t index)
+{
+  if (index >= ppIdentityCount()) {
+    return;
+  }
+  tft.fillScreen(kBg);
+  centerText("SWITCHING TO", 80, 2, kDim);
+  centerText(ppIdentityName(index), 110, 4, kAccent);
+  centerText("then pair it in GO", 160, 2, kFg);
+  delay(800);
+  ppIdentitySwitchTo(index);
+}
+
+static void applyMenuResult(PpMenuResult result)
+{
+  switch (result.outcome) {
+    case PP_MENU_OUT_REDRAW: {
+      drawMenu();
+      break;
+    }
+    case PP_MENU_OUT_CLOSED: {
+      closeMenu();
+      break;
+    }
+    case PP_MENU_OUT_ACTION: {
+      if (result.id == PP_MENU_ACTION_IDENTITY) {
+        switchIdentity(result.arg);
+      }
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
 static void updateMenu(uint32_t now)
 {
-  if (now - menuActivityAt >= kMenuTimeoutMs) {
+  if (ppMenuTick(menuState, now).outcome == PP_MENU_OUT_CLOSED) {
     Serial.println("Display: menu timeout");
     closeMenu();
     return;
   }
+  // B = next, A = select. Touch boards add ppMenuSelectRow() here.
   if (buttonB.pressedEdge) {
-    menuIndex = static_cast<uint8_t>((menuIndex + 1) % ppIdentityCount());
-    menuActivityAt = now;
-    drawMenu();
+    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_NEXT, now));
     return;
   }
   if (buttonA.pressedEdge) {
-    if (menuIndex == ppIdentityActive()) {
-      closeMenu();
-      return;
-    }
-    tft.fillScreen(kBg);
-    centerText("SWITCHING TO", 80, 2, kDim);
-    centerText(ppIdentityName(menuIndex), 110, 4, kAccent);
-    centerText("then pair it in GO", 160, 2, kFg);
-    delay(800);
-    ppIdentitySwitchTo(menuIndex);
+    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_SELECT, now));
   }
 }
 
@@ -400,9 +406,6 @@ static void updateResetHold(uint32_t now)
 
 static void updateCombo(uint32_t now)
 {
-  if (ppIdentityCount() < 2) {
-    return;
-  }
   bool both = buttonA.down && buttonB.down;
   if (!both) {
     comboArmed = false;
