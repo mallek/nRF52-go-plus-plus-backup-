@@ -14,3 +14,5 @@ const PpSettings& ppSettings();
 // BLE callback: a flash write blocks.
 void ppSettingsSetAnimations(bool on);
 void ppSettingsSetPokegachi(bool on);
+// index < PP_SCREEN_SLEEP_COUNT; anything else is ignored.
+void ppSettingsSetScreenSleep(uint8_t index);

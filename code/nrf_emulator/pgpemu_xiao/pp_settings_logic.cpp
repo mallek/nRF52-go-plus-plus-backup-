@@ -2,7 +2,9 @@
 
 namespace {
 
-static constexpr uint8_t kFieldCount = 2;
+static constexpr uint8_t kFieldCount = 3;
+
+static constexpr uint32_t kScreenSleepMs[PP_SCREEN_SLEEP_COUNT] = { 10000, 30000, 60000, 120000 };
 static constexpr uint8_t kChecksumXor = 0xA5;
 
 uint8_t checksum(const uint8_t* bytes, size_t n)
@@ -24,21 +26,41 @@ uint8_t fieldGet(const PpSettings& s, uint8_t index)
     case 1: {
       return s.pokegachi ? 1 : 0;
     }
+    case 2: {
+      return s.screenSleep;
+    }
     default: {
       return 0;
     }
   }
 }
 
-void fieldSet(PpSettings& s, uint8_t index, bool value)
+// Highest value a saved field may hold; anything above keeps the default.
+uint8_t fieldMax(uint8_t index)
+{
+  switch (index) {
+    case 2: {
+      return PP_SCREEN_SLEEP_COUNT - 1;
+    }
+    default: {
+      return 1;
+    }
+  }
+}
+
+void fieldSet(PpSettings& s, uint8_t index, uint8_t value)
 {
   switch (index) {
     case 0: {
-      s.animations = value;
+      s.animations = (value == 1);
       break;
     }
     case 1: {
-      s.pokegachi = value;
+      s.pokegachi = (value == 1);
+      break;
+    }
+    case 2: {
+      s.screenSleep = value;
       break;
     }
     default: {
@@ -54,7 +76,14 @@ PpSettings ppSettingsDefaults()
   PpSettings s;
   s.animations = true;
   s.pokegachi = false;
+  s.screenSleep = PP_SCREEN_SLEEP_DEFAULT;
   return s;
+}
+
+uint32_t ppSettingsScreenSleepMs(const PpSettings& s)
+{
+  uint8_t index = s.screenSleep < PP_SCREEN_SLEEP_COUNT ? s.screenSleep : PP_SCREEN_SLEEP_DEFAULT;
+  return kScreenSleepMs[index];
 }
 
 size_t ppSettingsPack(const PpSettings& s, uint8_t* out, size_t cap)
@@ -90,8 +119,8 @@ bool ppSettingsUnpack(const uint8_t* in, size_t len, PpSettings& out)
   }
   for (uint8_t i = 0; i < kFieldCount && i < payload; ++i) {
     uint8_t raw = in[2 + i];
-    if (raw <= 1) {
-      fieldSet(out, i, raw == 1);
+    if (raw <= fieldMax(i)) {
+      fieldSet(out, i, raw);
     }
   }
   return true;

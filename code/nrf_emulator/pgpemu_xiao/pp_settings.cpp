@@ -70,3 +70,12 @@ void ppSettingsSetPokegachi(bool on)
   current.pokegachi = on;
   save();
 }
+
+void ppSettingsSetScreenSleep(uint8_t index)
+{
+  if (index >= PP_SCREEN_SLEEP_COUNT || current.screenSleep == index) {
+    return;
+  }
+  current.screenSleep = index;
+  save();
+}

@@ -6,7 +6,7 @@
 namespace {
 
 // Provider ids for the rows of the top page.
-enum : uint8_t { kIdIdentity = 0, kIdAnimations, kIdPokegachi };
+enum : uint8_t { kIdIdentity = 0, kIdAnimations, kIdPokegachi, kIdScreenSleep };
 
 static constexpr uint8_t kPageIdentity = 1;
 
@@ -22,6 +22,8 @@ struct ChoiceSetting {
 
 static const char* const kOnOff[] = { "ON", "OFF" };
 static const char* const kOffOn[] = { "OFF", "ON" };
+// Same order as the times in pp_settings_logic.cpp.
+static const char* const kScreenSleep[PP_SCREEN_SLEEP_COUNT] = { "10s", "30s", "1m", "2m" };
 
 static uint8_t getAnimations()
 {
@@ -43,9 +45,20 @@ static void setPokegachi(uint8_t n)
   ppSettingsSetPokegachi(n == 1);
 }
 
+static uint8_t getScreenSleep()
+{
+  return ppSettings().screenSleep;
+}
+
+static void setScreenSleep(uint8_t n)
+{
+  ppSettingsSetScreenSleep(n);
+}
+
 static const ChoiceSetting kChoices[] = {
   { kIdAnimations, 2, kOnOff, getAnimations, setAnimations },
   { kIdPokegachi, 2, kOffOn, getPokegachi, setPokegachi },
+  { kIdScreenSleep, PP_SCREEN_SLEEP_COUNT, kScreenSleep, getScreenSleep, setScreenSleep },
 };
 
 static const ChoiceSetting* findChoice(uint8_t id)
@@ -119,6 +132,7 @@ static const PpMenuProvider kProvider = { choiceCount, choiceCurrent, choiceText
 static const PpMenuItem kTopItems[] = {
   { "Identity", PP_MENU_SUBMENU, kIdIdentity, kPageIdentity },
   { "Animations", PP_MENU_CHOICE, kIdAnimations, 0 },
+  { "Screen sleep", PP_MENU_CHOICE, kIdScreenSleep, 0 },
   { "PokeGachi", PP_MENU_CHOICE, kIdPokegachi, 0 },
 };
 

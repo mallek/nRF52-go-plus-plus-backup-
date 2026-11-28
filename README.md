@@ -139,6 +139,7 @@ last row to it. The menu closes after 20 s without a press.
 | --- | --- | --- |
 | Identity | names in the build | opens the identity list; picking another one switches to it |
 | Animations | ON, OFF | OFF skips the catch, spin, ready and boot animations. Catches, spins and the GO handshake then neither light nor extend the screen; warnings such as bag full still do. Meant as a battery saver. |
+| Screen sleep | 10s, 30s, 1m, 2m | how long the screen stays lit after a button press (default 30s) |
 | PokeGachi | OFF, ON | stored only, nothing reads it yet |
 
 Settings are saved on the device and survive a reboot, an identity switch and

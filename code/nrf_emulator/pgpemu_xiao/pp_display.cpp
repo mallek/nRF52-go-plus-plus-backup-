@@ -22,8 +22,13 @@
 
 namespace {
 
+// How long the screen stays lit after a press: the Screen sleep setting.
+static uint32_t screenSleepMs()
+{
+  return ppSettingsScreenSleepMs(ppSettings());
+}
+
 static constexpr uint32_t kComboHoldMs = 1500;
-static constexpr uint32_t kBacklightTimeoutMs = 30000;
 // After an animation the status screen stays lit this long.
 static constexpr uint32_t kAfterAnimHoldMs = 5000;
 static constexpr uint32_t kAnimFrameMs = 50;
@@ -139,7 +144,7 @@ static void setBacklight(bool on)
   }
 }
 
-static void touchBacklight(uint32_t now, uint32_t forMs = kBacklightTimeoutMs)
+static void touchBacklight(uint32_t now, uint32_t forMs = screenSleepMs())
 {
   uint32_t until = now + forMs;
   if (!backlightOn || static_cast<int32_t>(until - backlightUntil) > 0) {
@@ -433,7 +438,7 @@ void ppDisplayBegin()
   tft.setRotation(1);
   tft.setTextWrap(false);
   started = true;
-  backlightUntil = millis() + kBacklightTimeoutMs;
+  backlightUntil = millis() + screenSleepMs();
   drawStatusFrame();
   drawStatusLines();
   if (ppSettings().animations) {
@@ -454,7 +459,7 @@ void ppDisplayUpdate()
   if (buttonA.pressedEdge || buttonB.pressedEdge) {
     bool wasDark = !backlightOn;
     bool brief = mode == MODE_STATUS && !connected && everConnected;
-    touchBacklight(now, brief ? kDisconnectedShowMs : kBacklightTimeoutMs);
+    touchBacklight(now, brief ? kDisconnectedShowMs : screenSleepMs());
     if (wasDark) {
       // First press only wakes the screen.
       buttonA.pressedEdge = false;
