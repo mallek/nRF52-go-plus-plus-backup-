@@ -26,8 +26,8 @@
 //                  for a final form), Pokedex, Sanctuary, Enabled, Reset game.
 //                  The same page is the PokeGachi row of the settings menu.
 //   Feed, Play, Evolve and a battle's end show a result card for about 2 s or
-//   until a press, then go back to the page. Play first shows the pet walking
-//   about 5 s and Evolve a flicker between the two forms; any button skips
+//   until a press, then go back to the page. Play first shows the pet chasing
+//   something about 5 s and Evolve a flicker between the two forms; any button skips
 //   either one and goes to the card. A pet that arrives is announced
 //   by a card on the next lit home screen.
 //   battle         B = next pick, A = throw; first to two round wins. The menu

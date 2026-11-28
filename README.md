@@ -192,7 +192,8 @@ left alone ends with no result when the screen sleeps.
 #### The living pet
 
 With PokeGachi on and Animations on, the home screen is a small stage: the
-pet stands on a meadow and idles whenever the screen is lit.
+pet lives on a meadow and wanders whenever the screen is lit: it stands, bobs
+now and then, and walks to a new spot. Lighting the screen sets it walking.
 
 - Reactions (a dark screen stays dark for these): a catch makes it hop with
   hearts; a flee makes it flop with stars and get up; a spin drops a berry
@@ -203,11 +204,12 @@ pet stands on a meadow and idles whenever the screen is lit.
   dark screen too and the pet wakes with a hop on the day meadow.
 - The Feed result card shows the pet eating a berry (for the species that have
   an eating animation; the others idle); the animation plays on the card.
-- Play shows the pet walking back and forth across one of four random scenes
-  (meadow, beach, forest, night camp) for about 5 s, then the result card.
+- Play is a chase in one of four random scenes for about 5 s, then the result
+  card. The pet runs after a butterfly (meadow), a beach ball (beach), a
+  falling leaf (forest) or a firefly (night camp) and jumps for it at the end.
 - Evolve flickers the stage between the old and new form, settles on the new
   one, then shows the card.
-- Any button press skips a play walk or an evolve flicker and goes to the card.
+- Any button press skips a play chase or an evolve flicker and goes to the card.
 - With no pet yet, the stage shows an empty ball on the meadow.
 
 What plays when:
