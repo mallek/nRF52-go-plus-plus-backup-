@@ -19,3 +19,6 @@ __pycache__/
 
 # Multi-identity table generated from dumps (cert, key, MAC) - never commit
 **/pp_identities.generated.h
+
+# Private design notes: never committed
+docs/private/
