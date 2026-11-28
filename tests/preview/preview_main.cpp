@@ -435,6 +435,52 @@ void checkFrameDrawing() {
   CHECK(ppGachiSpriteScale(nullptr, 100, 100) == 0);
 }
 
+// A screen that counts drawRGBBitmap calls and keeps what they draw.
+struct PushScreen {
+  Canvas pixels{320, 320};
+  int calls = 0;
+  void drawRGBBitmap(int16_t x, int16_t y, uint16_t* buf, int16_t w, int16_t h) {
+    ++calls;
+    pixels.drawRGBBitmap(x, y, buf, w, h);
+  }
+};
+
+// ppGachiStagePush from a 240x200 canvas, as on the device: a full-width stage goes in
+// one call, a 172-wide one row by row with the 240 stride, and every pixel lands right.
+void checkStagePush() {
+  GFXcanvas16 canvas(240, 200);
+  CHECK(canvas.getBuffer() != nullptr);
+  for (int16_t y = 0; y < 200; ++y) {
+    for (int16_t x = 0; x < 240; ++x) {
+      canvas.drawPixel(x, y, static_cast<uint16_t>(y * 240 + x + 1));
+    }
+  }
+  const int16_t sizes[2][2] = {{240, 120}, {172, 164}};
+  for (uint8_t s = 0; s < 2; ++s) {
+    int16_t sw = sizes[s][0];
+    int16_t sh = sizes[s][1];
+    PushScreen screen;
+    CHECK(ppGachiStagePush(screen, canvas, 3, 14, sw, sh));
+    CHECK(screen.calls == (sw == 240 ? 1 : sh));
+    int bad = 0;
+    for (int16_t y = 0; y < sh; ++y) {
+      for (int16_t x = 0; x < sw; ++x) {
+        if (screen.pixels.at(static_cast<int16_t>(3 + x), static_cast<int16_t>(14 + y)) != static_cast<uint16_t>(y * 240 + x + 1)) {
+          ++bad;
+        }
+      }
+    }
+    CHECK(bad == 0);
+    CHECK(screen.pixels.at(static_cast<int16_t>(3 + sw), 14) == 0);    // nothing right of the area
+    CHECK(screen.pixels.at(3, static_cast<int16_t>(14 + sh)) == 0);    // nothing under it
+  }
+  PushScreen screen;
+  CHECK(!ppGachiStagePush(screen, canvas, 0, 0, 241, 10));
+  CHECK(!ppGachiStagePush(screen, canvas, 0, 0, 100, 201));
+  CHECK(!ppGachiStagePush(screen, canvas, 0, 0, 0, 10));
+  CHECK(screen.calls == 0);
+}
+
 // Every scene behind the idle pet, and the placeholder for a species with no sprite.
 void renderStageStills() {
   const PpStageScene scenes[PP_SCENE_COUNT] = {PP_SCENE_MEADOW, PP_SCENE_BEACH, PP_SCENE_FOREST, PP_SCENE_CAMP_NIGHT,
@@ -799,6 +845,7 @@ int main(int argc, char** argv) {
   renderBattles(172, 320, "_172x320");
   renderMenus(172, 320, "_172x320");
   checkFrameDrawing();
+  checkStagePush();
   renderStageStills();
   renderStageGifs();
   renderCardGifs();

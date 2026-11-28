@@ -19,8 +19,36 @@ void ppGachiStageRect(int16_t w, int16_t h, int16_t& x, int16_t& y, int16_t& sw,
 
 // Scene, pet (or empty ball) and symbol, drawn at the canvas origin in an sw x sh area.
 // oldDex is the form drawn while pose.oldForm is set (0 when not evolving).
+// WARNING: the area is the top-left corner of a canvas that may be wider than sw (the
+// shared ppAnimCanvas() is 240 wide, so its row stride is 240 even when sw is 172).
+// Never push it with one drawRGBBitmap(x, y, buffer, sw, sh): every row after the first
+// would be skewed. Push it with ppGachiStagePush below.
 void ppGachiStageDraw(Adafruit_GFX& canvas, int16_t sw, int16_t sh, const PpStagePose& pose,
                       uint8_t dex, bool shiny, uint8_t oldDex, const PpMenuColors& colors);
+
+// Pushes the top-left sw x sh area of `canvas` to the screen at (x, y). One call when sw
+// is the canvas width, else one call per row, each starting at its row in the canvas
+// buffer. No heap. False (nothing drawn) when the canvas has no buffer or the area does
+// not fit in it. A template so the panel's own fast drawRGBBitmap is used (Adafruit_SPITFT
+// hides the slow Adafruit_GFX one rather than overriding it): pass the panel itself, for
+// example the Adafruit_ST7789, not an Adafruit_GFX reference to it.
+template <typename Screen>
+bool ppGachiStagePush(Screen& screen, GFXcanvas16& canvas, int16_t x, int16_t y, int16_t sw, int16_t sh)
+{
+  uint16_t* buf = canvas.getBuffer();
+  const int16_t stride = canvas.width();   // the canvas is never rotated
+  if (buf == nullptr || sw <= 0 || sh <= 0 || sw > stride || sh > canvas.height()) {
+    return false;
+  }
+  if (sw == stride) {
+    screen.drawRGBBitmap(x, y, buf, sw, sh);
+    return true;
+  }
+  for (int16_t row = 0; row < sh; ++row) {
+    screen.drawRGBBitmap(x, static_cast<int16_t>(y + row), buf + static_cast<int32_t>(row) * stride, sw, 1);
+  }
+  return true;
+}
 
 // One frame of a sprite with its ground point at (cx, groundY), at a whole-number scale.
 // Draws nothing for a null sprite or animation.

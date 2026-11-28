@@ -6,6 +6,16 @@
 
 #include "pp_gachi_ui.h"
 
+// The device panel's push, built here so the compile checks it against the real
+// Adafruit_ST7789 (the PC preview has no panel library and tests the template itself).
+#if defined(__has_include)
+#if __has_include(<Adafruit_ST7789.h>)
+#include <Adafruit_ST7789.h>
+template bool ppGachiStagePush<Adafruit_ST7789>(Adafruit_ST7789& screen, GFXcanvas16& canvas, int16_t x, int16_t y,
+                                                int16_t sw, int16_t sh);
+#endif
+#endif
+
 namespace {
 
 static constexpr int16_t kStageTop = 14;     // under the small top line
