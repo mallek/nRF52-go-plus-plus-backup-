@@ -219,6 +219,41 @@ static uint32_t sleepSecondsLeft(uint32_t now)
   return leftMs > 0 ? static_cast<uint32_t>(leftMs + 999) / 1000 : 0;
 }
 
+// The pet face's link word and its color: the same rules as the text screen.
+// One place returns each text, so the pointer tells which word is meant.
+static const char* gachiLinkWord(uint16_t& color)
+{
+  if (connected) {
+    color = kGood;
+    return "CONNECTED";
+  }
+  if (everConnected) {
+    color = kBad;
+    return "DISCONNECTED";
+  }
+  color = kFg;
+  return "WAITING";
+}
+
+// What the last full pet face drew above the lines band: the link word on the
+// top line and the sprite (or the empty ball).
+static const char* frameLink = nullptr;
+static bool frameHasPet = false;
+static uint8_t frameDex = 0;
+static bool frameShiny = false;
+
+// True when the top line or the sprite on screen no longer matches the state,
+// so a lines-only redraw would leave them stale.
+static bool gachiFrameStale()
+{
+  uint16_t color = 0;
+  const PpGachiState& st = ppGachiState();
+  if (gachiLinkWord(color) != frameLink || st.hasPet != frameHasPet) {
+    return true;
+  }
+  return st.hasPet && (st.petDex != frameDex || st.petShiny != frameShiny);
+}
+
 // The pet face's text lines, built from the same state the text screen shows.
 // The buffers are static so the pointers outlive this call; the draw that
 // uses them follows at once. Records the countdown second it shows.
@@ -232,16 +267,7 @@ static PpGachiHomeLines gachiHomeLines(uint32_t now)
            static_cast<unsigned>(ppIdentityActive() + 1),
            static_cast<unsigned>(ppIdentityCount()));
   lines.topLeft = top;
-  if (connected) {
-    lines.topRight = "CONNECTED";
-    lines.topRightColor = kGood;
-  } else if (everConnected) {
-    lines.topRight = "DISCONNECTED";
-    lines.topRightColor = kBad;
-  } else {
-    lines.topRight = "WAITING";
-    lines.topRightColor = kFg;
-  }
+  lines.topRight = gachiLinkWord(lines.topRightColor);
   lines.pantryOverride = nullptr;
   if (countdownVisible()) {
     uint32_t secs = sleepSecondsLeft(now);
@@ -267,7 +293,12 @@ static void drawStatusFrame()
 {
   if (ppGachiEnabled()) {
     PpGachiHomeLines lines = gachiHomeLines(millis());
-    ppGachiDrawHome(tft, tft.width(), tft.height(), ppGachiState(), lines, kColors);
+    const PpGachiState& st = ppGachiState();
+    ppGachiDrawHome(tft, tft.width(), tft.height(), st, lines, kColors);
+    frameLink = lines.topRight;
+    frameHasPet = st.hasPet;
+    frameDex = st.petDex;
+    frameShiny = st.petShiny;
     statusDirty = false;
     return;
   }
@@ -301,6 +332,11 @@ static void drawCountdown(uint32_t now)
 static void drawStatusLines()
 {
   if (ppGachiEnabled()) {
+    if (gachiFrameStale()) {
+      // A connect, a disconnect or a new pet changed what sits above the band.
+      drawStatusFrame();
+      return;
+    }
     PpGachiHomeLines lines = gachiHomeLines(millis());
     ppGachiDrawHomeLines(tft, tft.width(), tft.height(), ppGachiState(), lines, kColors);
     statusDirty = false;
@@ -865,7 +901,14 @@ void ppDisplayUpdate()
   if (anim.kind != PP_ANIM_NONE && mode == MODE_STATUS) {
     if (ppAnimDone(anim, now)) {
       anim.kind = PP_ANIM_NONE;
-      drawHomeScreen();
+      // A pet that just arrived is announced straight away, without one
+      // loop of the pet face showing it first.
+      if (backlightOn && !holdShown && arrivalCardDue()) {
+        showArrivalCard(now);
+      }
+      if (mode == MODE_STATUS) {
+        drawHomeScreen();
+      }
     } else if (now - animFrameAt >= kAnimFrameMs) {
       animFrameAt = now;
       if (!ppAnimDrawFrame(tft, anim.kind, ppAnimProgress(anim, now))) {
