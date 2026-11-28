@@ -94,6 +94,12 @@ PpMenuResult ppMenuTick(PpMenuState& st, uint32_t now);
 // Rows on the current page, including the Back row. 0 when closed.
 uint8_t ppMenuRowCount(const PpMenuState& st, const PpMenu& menu);
 
+// Two-button boards: maps this loop's button state to an input. One button
+// alone acts on its press edge. While both are down nothing acts, so the
+// chord that opens the menu cannot turn into NEXT then SELECT inside it.
+// Returns false when there is no input.
+bool ppMenuTwoButtonInput(bool nextEdge, bool selectEdge, bool nextDown, bool selectDown, PpMenuInput& out);
+
 // ---- view: what the screen draws -----------------------------------------
 
 struct PpMenuRowView {

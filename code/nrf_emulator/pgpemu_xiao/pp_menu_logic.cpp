@@ -316,3 +316,19 @@ void ppMenuBuildView(const PpMenuState& st, const PpMenu& menu, uint8_t maxRows,
     out.rows[i].selected = (row == cursor);
   }
 }
+
+bool ppMenuTwoButtonInput(bool nextEdge, bool selectEdge, bool nextDown, bool selectDown, PpMenuInput& out)
+{
+  if (nextDown && selectDown) {
+    return false;
+  }
+  if (nextEdge) {
+    out = PP_MENU_IN_NEXT;
+    return true;
+  }
+  if (selectEdge) {
+    out = PP_MENU_IN_SELECT;
+    return true;
+  }
+  return false;
+}

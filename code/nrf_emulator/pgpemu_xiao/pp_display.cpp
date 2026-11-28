@@ -355,13 +355,11 @@ static void updateMenu(uint32_t now)
     closeMenu();
     return;
   }
-  // B = next, A = select. Touch boards add ppMenuSelectRow() here.
-  if (buttonB.pressedEdge) {
-    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_NEXT, now));
-    return;
-  }
-  if (buttonA.pressedEdge) {
-    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_SELECT, now));
+  // B = next, A = select; both down does nothing. Touch boards add
+  // ppMenuSelectRow() here.
+  PpMenuInput input;
+  if (ppMenuTwoButtonInput(buttonB.pressedEdge, buttonA.pressedEdge, buttonB.down, buttonA.down, input)) {
+    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), input, now));
   }
 }
 

@@ -560,6 +560,22 @@ static void testViewClosed()
   CHECK(std::strcmp(v.title, "") == 0);
 }
 
+static void testTwoButtonInput()
+{
+  PpMenuInput out = PP_MENU_IN_BACK;
+  // nothing pressed
+  CHECK(!ppMenuTwoButtonInput(false, false, false, false, out));
+  // B alone = next, A alone = select
+  CHECK(ppMenuTwoButtonInput(true, false, true, false, out) && out == PP_MENU_IN_NEXT);
+  CHECK(ppMenuTwoButtonInput(false, true, false, true, out) && out == PP_MENU_IN_SELECT);
+  // The A+B chord that opened the menu, pressed again inside it: B lands
+  // first, then A one loop later while B is still down. Neither may act, or
+  // the row after the cursor gets selected.
+  CHECK(!ppMenuTwoButtonInput(false, true, true, true, out));
+  CHECK(!ppMenuTwoButtonInput(true, false, true, true, out));
+  CHECK(!ppMenuTwoButtonInput(true, true, true, true, out));
+}
+
 int main()
 {
   testOpenStartsAfterBack();
@@ -589,6 +605,7 @@ int main()
   testViewMaxRowsClamped();
   testViewNullStrings();
   testViewClosed();
+  testTwoButtonInput();
   if (failures == 0) {
     std::printf("menu_logic: all passed\n");
     return 0;
