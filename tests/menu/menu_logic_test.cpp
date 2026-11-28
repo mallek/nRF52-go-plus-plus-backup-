@@ -1,0 +1,420 @@
+// Host tests for pp_menu_logic. Build + run from this folder (WSL or any g++):
+//   g++ -std=c++17 -Wall -Wextra -Werror -I../../code/nrf_emulator/pgpemu_xiao
+//       menu_logic_test.cpp ../../code/nrf_emulator/pgpemu_xiao/pp_menu_logic.cpp -o t
+//   ./t
+// Or all host tests: bash tests/run.sh
+
+#include <cstdio>
+#include <cstring>
+
+#include "pp_menu_logic.h"
+
+static int failures = 0;
+
+#define CHECK(cond)                                                    \
+  do {                                                                 \
+    if (!(cond)) {                                                     \
+      std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond);      \
+      ++failures;                                                      \
+    }                                                                  \
+  } while (0)
+
+// ---- fixture -------------------------------------------------------------
+
+static constexpr uint8_t kIdIdentity = 0;
+static constexpr uint8_t kIdAnimations = 1;
+static constexpr uint8_t kActReset = 9;
+static constexpr uint8_t kListIdentity = 5;
+
+static uint8_t gChoice = 0;
+static uint8_t gChoiceCount = 2;
+static int gSetCalls = 0;
+static uint8_t gListCount = 3;
+static uint8_t gListActive = 0;
+static bool gNullTexts = false;
+
+static uint8_t fxChoiceCount(uint8_t) { return gChoiceCount; }
+static uint8_t fxChoiceCurrent(uint8_t) { return gChoice; }
+static const char* fxChoiceText(uint8_t, uint8_t n)
+{
+  if (gNullTexts) {
+    return nullptr;
+  }
+  return n == 0 ? "ON" : "OFF";
+}
+static void fxChoiceSet(uint8_t, uint8_t n)
+{
+  gChoice = n;
+  ++gSetCalls;
+}
+static const char* fxValueText(uint8_t)
+{
+  if (gNullTexts) {
+    return nullptr;
+  }
+  return "TRAVIS";
+}
+static uint8_t fxListCount(uint8_t) { return gListCount; }
+static const char* fxListText(uint8_t, uint8_t n)
+{
+  static const char* names[] = { "N0", "N1", "N2", "N3", "N4", "N5", "N6" };
+  if (gNullTexts || n >= 7) {
+    return nullptr;
+  }
+  return names[n];
+}
+static uint8_t fxListActive(uint8_t) { return gListActive; }
+
+static const PpMenuProvider kProvider = { fxChoiceCount, fxChoiceCurrent, fxChoiceText, fxChoiceSet,
+                                          fxValueText,   fxListCount,     fxListText,   fxListActive };
+static const PpMenuProvider kNullProvider = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+
+static const PpMenuItem kTopItems[] = {
+  { "Identity", PP_MENU_SUBMENU, kIdIdentity, 1 },
+  { "Animations", PP_MENU_CHOICE, kIdAnimations, 0 },
+  { "Reset", PP_MENU_ACTION, kActReset, 0 },
+};
+static const PpMenuPage kPages[] = {
+  { "SETTINGS", kTopItems, 3, 0 },
+  { "IDENTITY", nullptr, 0, kListIdentity },
+};
+static const PpMenu kMenu = { kPages, 2, &kProvider, "A:select", "B:next" };
+static const PpMenu kNullMenu = { kPages, 2, &kNullProvider, "A:select", "B:next" };
+
+// A chain three pages deep, each with one SUBMENU row to the next.
+static const PpMenuItem kDeepA[] = { { "a", PP_MENU_SUBMENU, 0, 1 } };
+static const PpMenuItem kDeepB[] = { { "b", PP_MENU_SUBMENU, 0, 2 } };
+static const PpMenuItem kDeepC[] = { { "c", PP_MENU_SUBMENU, 0, 3 } };
+static const PpMenuItem kDeepD[] = { { "d", PP_MENU_ACTION, 1, 0 } };
+static const PpMenuPage kDeepPages[] = {
+  { "A", kDeepA, 1, 0 },
+  { "B", kDeepB, 1, 0 },
+  { "C", kDeepC, 1, 0 },
+  { "D", kDeepD, 1, 0 },
+};
+static const PpMenu kDeepMenu = { kDeepPages, 4, &kProvider, "", "" };
+
+static void resetFixture()
+{
+  gChoice = 0;
+  gChoiceCount = 2;
+  gSetCalls = 0;
+  gListCount = 3;
+  gListActive = 0;
+  gNullTexts = false;
+}
+
+static PpMenuResult in(PpMenuState& st, PpMenuInput input, uint32_t now = 1000)
+{
+  return ppMenuInput(st, kMenu, input, now);
+}
+
+// ---- navigation ----------------------------------------------------------
+
+static void testOpenStartsAfterBack()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  CHECK(st.open);
+  CHECK(st.depth == 0);
+  CHECK(st.cursor[0] == 1);
+  CHECK(ppMenuRowCount(st, kMenu) == 4);
+}
+
+static void testNextWrapsThroughBack()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  CHECK(in(st, PP_MENU_IN_NEXT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.cursor[0] == 2);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(st.cursor[0] == 3);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(st.cursor[0] == 0);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(st.cursor[0] == 1);
+}
+
+static void testChoiceStepsAndWraps()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_NEXT);  // Animations
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(gChoice == 1);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(gChoice == 0);
+  CHECK(gSetCalls == 2);
+  CHECK(st.open);
+}
+
+static void testChoiceWithZeroCountIsSafe()
+{
+  resetFixture();
+  gChoiceCount = 0;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_NONE);
+  CHECK(gSetCalls == 0);
+}
+
+static void testChoiceCurrentOutOfRange()
+{
+  resetFixture();
+  gChoice = 9;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(gChoice == 1);  // 9 of 2 is treated as 0, then stepped
+  CHECK(gSetCalls == 1);
+}
+
+static void testSubmenuPushAndBackRow()
+{
+  resetFixture();
+  gListActive = 1;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);  // Identity
+  CHECK(st.depth == 1);
+  CHECK(st.page[1] == 1);
+  CHECK(st.cursor[1] == 2);  // 1 + active
+  CHECK(ppMenuRowCount(st, kMenu) == 4);
+  in(st, PP_MENU_IN_NEXT);  // row 3
+  in(st, PP_MENU_IN_NEXT);  // row 0, Back
+  CHECK(st.cursor[1] == 0);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+  CHECK(st.cursor[0] == 1);
+  CHECK(st.open);
+}
+
+static void testBackInputPops()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(st.depth == 1);
+  CHECK(in(st, PP_MENU_IN_BACK).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+  CHECK(in(st, PP_MENU_IN_BACK).outcome == PP_MENU_OUT_CLOSED);
+  CHECK(!st.open);
+}
+
+static void testBackRowOnTopCloses()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(st.cursor[0] == 0);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_CLOSED);
+  CHECK(!st.open);
+}
+
+static void testListSelectOther()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(st.cursor[1] == 1);
+  in(st, PP_MENU_IN_NEXT);
+  PpMenuResult r = in(st, PP_MENU_IN_SELECT);
+  CHECK(r.outcome == PP_MENU_OUT_ACTION);
+  CHECK(r.id == kListIdentity);
+  CHECK(r.arg == 1);
+  CHECK(st.open);
+}
+
+static void testListSelectActivePops()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+}
+
+static void testEmptyListIsSafe()
+{
+  resetFixture();
+  gListCount = 0;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(st.depth == 1);
+  CHECK(ppMenuRowCount(st, kMenu) == 1);
+  CHECK(st.cursor[1] == 0);
+  in(st, PP_MENU_IN_NEXT);
+  CHECK(st.cursor[1] == 0);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 0);
+}
+
+static void testListActiveOutOfRange()
+{
+  resetFixture();
+  gListActive = 200;
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT);
+  CHECK(st.cursor[1] == 1);
+}
+
+static void testActionRow()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_NEXT);
+  in(st, PP_MENU_IN_NEXT);
+  PpMenuResult r = in(st, PP_MENU_IN_SELECT);
+  CHECK(r.outcome == PP_MENU_OUT_ACTION);
+  CHECK(r.id == kActReset);
+  CHECK(r.arg == 0);
+  CHECK(st.open);
+}
+
+static void testTimeoutFromSubmenu()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  in(st, PP_MENU_IN_SELECT, 2000);
+  CHECK(st.depth == 1);
+  CHECK(ppMenuTick(st, 21999).outcome == PP_MENU_OUT_NONE);
+  CHECK(st.open);
+  CHECK(ppMenuTick(st, 22000).outcome == PP_MENU_OUT_CLOSED);
+  CHECK(!st.open);
+}
+
+static void testTimeoutAcrossWrap()
+{
+  resetFixture();
+  PpMenuState st = {};
+  uint32_t t0 = 0xFFFFF000u;
+  ppMenuOpen(st, kMenu, t0);
+  CHECK(ppMenuTick(st, t0 + 1).outcome == PP_MENU_OUT_NONE);
+  CHECK(ppMenuTick(st, t0 + 19999u).outcome == PP_MENU_OUT_NONE);  // already wrapped past 0
+  CHECK(st.open);
+  CHECK(ppMenuTick(st, t0 + 20000u).outcome == PP_MENU_OUT_CLOSED);
+  CHECK(!st.open);
+}
+
+static void testSelectRow()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kMenu, 1000);
+  CHECK(ppMenuSelectRow(st, kMenu, 2, 1000).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.cursor[0] == 2);
+  CHECK(gChoice == 1);
+  CHECK(ppMenuSelectRow(st, kMenu, 4, 1000).outcome == PP_MENU_OUT_NONE);
+  CHECK(st.cursor[0] == 2);
+  CHECK(ppMenuSelectRow(st, kMenu, 0, 1000).outcome == PP_MENU_OUT_CLOSED);
+}
+
+static void testClosedMenuIgnoresInput()
+{
+  resetFixture();
+  PpMenuState st = {};
+  CHECK(in(st, PP_MENU_IN_NEXT).outcome == PP_MENU_OUT_NONE);
+  CHECK(in(st, PP_MENU_IN_SELECT).outcome == PP_MENU_OUT_NONE);
+  CHECK(ppMenuTick(st, 99999).outcome == PP_MENU_OUT_NONE);
+  CHECK(ppMenuSelectRow(st, kMenu, 1, 1000).outcome == PP_MENU_OUT_NONE);
+  CHECK(ppMenuRowCount(st, kMenu) == 0);
+  CHECK(gSetCalls == 0);
+}
+
+static void testNullProviderPointers()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kNullMenu, 1000);
+  CHECK(ppMenuInput(st, kNullMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_REDRAW);  // into the list
+  CHECK(ppMenuRowCount(st, kNullMenu) == 1);
+  CHECK(ppMenuInput(st, kNullMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_REDRAW);  // Back
+  ppMenuInput(st, kNullMenu, PP_MENU_IN_NEXT, 1000);
+  CHECK(ppMenuInput(st, kNullMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_NONE);  // CHOICE
+  ppMenuInput(st, kNullMenu, PP_MENU_IN_NEXT, 1000);
+  CHECK(ppMenuInput(st, kNullMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_ACTION);
+
+  // No provider object at all.
+  PpMenu bare = { kPages, 2, nullptr, nullptr, nullptr };
+  PpMenuState st2 = {};
+  ppMenuOpen(st2, bare, 1000);
+  ppMenuInput(st2, bare, PP_MENU_IN_NEXT, 1000);
+  CHECK(ppMenuInput(st2, bare, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_NONE);
+
+  // No pages: the menu does not open.
+  PpMenu empty = { nullptr, 0, &kProvider, "", "" };
+  PpMenuState st3 = {};
+  ppMenuOpen(st3, empty, 1000);
+  CHECK(!st3.open);
+}
+
+static void testDepthLimit()
+{
+  resetFixture();
+  PpMenuState st = {};
+  ppMenuOpen(st, kDeepMenu, 1000);
+  CHECK(ppMenuInput(st, kDeepMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(ppMenuInput(st, kDeepMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_REDRAW);
+  CHECK(st.depth == 2);
+  CHECK(ppMenuInput(st, kDeepMenu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_NONE);
+  CHECK(st.depth == 2);
+}
+
+static void testSubmenuPageOutOfRange()
+{
+  static const PpMenuItem items[] = { { "bad", PP_MENU_SUBMENU, 0, 7 } };
+  static const PpMenuPage pages[] = { { "T", items, 1, 0 } };
+  PpMenu menu = { pages, 1, &kProvider, "", "" };
+  PpMenuState st = {};
+  ppMenuOpen(st, menu, 1000);
+  CHECK(ppMenuInput(st, menu, PP_MENU_IN_SELECT, 1000).outcome == PP_MENU_OUT_NONE);
+  CHECK(st.depth == 0);
+}
+
+// VIEW_TESTS
+
+int main()
+{
+  testOpenStartsAfterBack();
+  testNextWrapsThroughBack();
+  testChoiceStepsAndWraps();
+  testChoiceWithZeroCountIsSafe();
+  testChoiceCurrentOutOfRange();
+  testSubmenuPushAndBackRow();
+  testBackInputPops();
+  testBackRowOnTopCloses();
+  testListSelectOther();
+  testListSelectActivePops();
+  testEmptyListIsSafe();
+  testListActiveOutOfRange();
+  testActionRow();
+  testTimeoutFromSubmenu();
+  testTimeoutAcrossWrap();
+  testSelectRow();
+  testClosedMenuIgnoresInput();
+  testNullProviderPointers();
+  testDepthLimit();
+  testSubmenuPageOutOfRange();
+  // VIEW_CALLS
+  if (failures == 0) {
+    std::printf("menu_logic: all passed\n");
+    return 0;
+  }
+  std::printf("menu_logic: %d failure(s)\n", failures);
+  return 1;
+}
