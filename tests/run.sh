@@ -12,14 +12,16 @@ declare -A SRC=(
   [feedback]="feedback_logic_test.cpp:$SK/pp_feedback_logic.cpp"
   [logstore]="log_store_test.cpp:$SK/pp_feedback_log_store.cpp"
   [sleep]="sleep_night_test.cpp:$SK/pp_sleep_night.cpp"
+  [gachispecies]="gachi_species_test.cpp:$SK/pp_gachi_species.cpp"
 )
 fail=0
-for dir in "${@:-anim settings menu feedback logstore sleep}"; do
+for dir in "${@:-anim settings menu feedback logstore sleep gachispecies}"; do
   for d in $dir; do
     entry="${SRC[$d]:-}"
     if [[ -z "$entry" ]]; then echo "unknown test folder: $d"; fail=1; continue; fi
     test="${entry%%:*}"; sources="${entry#*:}"
     folder="$d"; if [[ "$d" == "logstore" ]]; then folder="feedback"; fi
+    if [[ "$d" == "gachispecies" ]]; then folder="gachi"; fi
     ( cd "$folder" && g++ -std=c++17 -Wall -Wextra -Werror -I"$SK" "$test" $sources -o /tmp/pp_test_$d && /tmp/pp_test_$d ) || fail=1
   done
 done
