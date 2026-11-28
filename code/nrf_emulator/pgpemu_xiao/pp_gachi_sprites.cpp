@@ -9,7 +9,7 @@
 
 #ifndef PP_GACHI_HAVE_SPRITES
 static const PpGachiSprite PP_GACHI_SPRITE_TABLE[] = {
-  {0, false, 0, 0, nullptr, nullptr},
+  {0, false, nullptr, {}},
 };
 static const uint8_t PP_GACHI_SPRITE_TABLE_COUNT = 0;
 #endif
@@ -30,4 +30,32 @@ const PpGachiSprite* ppGachiSpriteFor(uint8_t dex, bool shiny) {
     s = findSprite(dex, false);
   }
   return s;
+}
+
+static bool usable(const PpGachiAnim& a) {
+  return a.frames > 0 && a.w > 0 && a.h > 0 && a.ms != nullptr && a.pixels != nullptr;
+}
+
+const PpGachiAnim* ppGachiSpriteAnim(const PpGachiSprite* sprite, PpStageAnim anim) {
+  if (sprite == nullptr || sprite->palette == nullptr) {
+    return nullptr;
+  }
+  if (anim < PP_SANIM_COUNT && usable(sprite->anim[anim])) {
+    return &sprite->anim[anim];
+  }
+  if (usable(sprite->anim[PP_SANIM_IDLE])) {
+    return &sprite->anim[PP_SANIM_IDLE];
+  }
+  return nullptr;
+}
+
+void ppGachiSpriteTimings(const PpGachiSprite* sprite, PpStageTimings& out) {
+  for (uint8_t i = 0; i < PP_SANIM_COUNT; i++) {
+    out.anim[i].frames = 0;
+    out.anim[i].ms = nullptr;
+    if (sprite != nullptr && sprite->palette != nullptr && usable(sprite->anim[i])) {
+      out.anim[i].frames = sprite->anim[i].frames;
+      out.anim[i].ms = sprite->anim[i].ms;
+    }
+  }
 }

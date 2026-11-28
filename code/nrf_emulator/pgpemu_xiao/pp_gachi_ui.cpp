@@ -231,8 +231,9 @@ int16_t ppGachiHomeLinesTop(int16_t h)
 
 void ppGachiDrawSprite(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH, uint8_t dex, bool shiny, const PpMenuColors& colors)
 {
-  const PpGachiSprite* sp = ppGachiSpriteFor(dex, shiny);
-  if (sp == nullptr || sp->w == 0 || sp->h == 0 || sp->palette == nullptr || sp->pixels == nullptr) {
+  const PpGachiSprite* spr = ppGachiSpriteFor(dex, shiny);
+  const PpGachiAnim* sp = ppGachiSpriteAnim(spr, PP_SANIM_IDLE);   // Idle, frame 0
+  if (sp == nullptr || sp->w == 0 || sp->h == 0 || sp->pixels == nullptr) {
     drawSpriteBoxNumber(gfx, x, y, boxW, boxH, dex, colors);
     return;
   }
@@ -264,7 +265,7 @@ void ppGachiDrawSprite(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, in
         }
         ++col;
       }
-      gfx.fillRect(ox + start * scale, oy + row * scale, (col - start) * scale, scale, sp->palette[idx]);
+      gfx.fillRect(ox + start * scale, oy + row * scale, (col - start) * scale, scale, spr->palette[idx]);
     }
   }
 }

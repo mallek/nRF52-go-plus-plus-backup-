@@ -190,8 +190,10 @@ After an action a result card shows for about 2 s, or until a press. A battle
 left alone ends with no result when the screen sleeps.
 
 Sprites: the pet art is not part of this project. You fetch it yourself from
-the PokeAPI sprites repository with the sprite tool, which downloads the images
-into a local, gitignored cache and writes the sprite table:
+the PMD SpriteCollab sheets (fan-made, CC BY-NC, credits at
+https://sprites.pmdcollab.org/) with the sprite tool, which downloads the
+sheets into a local, gitignored cache and writes the sprite table with its
+animations:
 
 ```powershell
 python tools/sprites/gen_sprites.py code/nrf_emulator/pgpemu_xiao/pp_gachi_sprites.generated.h
