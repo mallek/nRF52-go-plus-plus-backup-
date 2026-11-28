@@ -7,6 +7,7 @@
 #include "pp_feedback_led.h"
 #include "pp_feedback_log.h"
 #include "pp_feedback_log_store.h"
+#include "pp_gachi.h"
 
 namespace {
 
@@ -131,6 +132,7 @@ void ppFeedbackUpdate()
     }
     ppFeedbackLedSetFull(fullState.pokemonFull, fullState.bagFull);
     ppFeedbackLedPlayEvent(shown, now);
+    ppGachiOnEvent(shown);
     ppDisplayOnEvent(shown);
   }
 
@@ -140,6 +142,7 @@ void ppFeedbackUpdate()
 
 void ppFeedbackShutdown()
 {
+  ppGachiFlush();
   if (!started) {
     return;
   }

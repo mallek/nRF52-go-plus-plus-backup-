@@ -6,6 +6,7 @@
 #include "pp_auth_bootstrap.h"
 #include "pp_board.h"
 #include "pp_display.h"
+#include "pp_gachi.h"
 #include "pp_identity.h"
 #include "pp_settings.h"
 #include "pp_auth_material.h"
@@ -265,6 +266,7 @@ void setup()
   ppIdentityBegin();
   // Needs InternalFS, which the identity code just mounted.
   ppSettingsBegin();
+  ppGachiBegin();
   ppRunBootSequence(makeAppBootRefs());
   ppFeedbackBegin();
   ppDisplayBegin();
@@ -274,6 +276,7 @@ void loop()
 {
   ppRunMainLoopTick(makeAppLoopRefs());
   ppFeedbackUpdate();
+  ppGachiUpdate(millis());
   ppDisplaySetSleepDeadline(disconnectedSleepArmed, disconnectedSleepAt);
   ppDisplayUpdate();
 }
