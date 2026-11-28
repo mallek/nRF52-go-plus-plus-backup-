@@ -314,6 +314,10 @@ static void closeMenu()
 {
   mode = MODE_STATUS;
   waitForRelease = true;
+  // Start the lit time over from the current Screen sleep value. The timer only
+  // ever extends, so without this a longer value passed through on the way to
+  // a shorter one (2m, then 10s) would keep the screen lit for the long time.
+  backlightUntil = millis() + screenSleepMs();
   drawStatusFrame();
 }
 
