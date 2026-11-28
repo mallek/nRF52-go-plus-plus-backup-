@@ -277,8 +277,317 @@ static void testOtherEventsIgnored()
   CHECK(std::memcmp(&before, &st, sizeof(st)) == 0);
 }
 
+// A state holding a pet of the given dex with the given tracks.
+static PpGachiState petState(uint8_t dex, uint8_t n, uint8_t h, uint8_t x)
+{
+  PpGachiState st;
+  ppGachiInit(st, 4242);
+  st.hasPet = true;
+  st.petDex = dex;
+  st.nutrition = n;
+  st.happiness = h;
+  st.experience = x;
+  int8_t idx = ppGachiSpeciesIndex(dex);
+  st.dexRaised = (uint16_t)(1u << idx);
+  return st;
+}
+
+static void testNeedAndReady()
+{
+  PpGachiState none;
+  ppGachiInit(none, 1);
+  CHECK(ppGachiNeed(none) == 0);
+  CHECK(!ppGachiReady(none));
+  PpGachiState a = petState(1, 5, 5, 4);
+  CHECK(ppGachiNeed(a) == 5);
+  CHECK(!ppGachiReady(a));
+  a.experience = 5;
+  CHECK(ppGachiReady(a));
+  PpGachiState b = petState(2, 5, 5, 5);
+  CHECK(ppGachiNeed(b) == 10);
+  CHECK(!ppGachiReady(b));
+  CHECK(ppGachiNeed(petState(25, 0, 0, 0)) == 8);
+  CHECK(ppGachiNeed(petState(26, 0, 0, 0)) == 5);
+  CHECK(!ppGachiIsFinalForm(a));
+  CHECK(ppGachiIsFinalForm(petState(3, 0, 0, 0)));
+  CHECK(ppGachiIsFinalForm(petState(26, 0, 0, 0)));
+  CHECK(!ppGachiIsFinalForm(none));
+}
+
+static void testFeed()
+{
+  PpGachiState none;
+  ppGachiInit(none, 1);
+  none.berries = 3;
+  CHECK(ppGachiFeed(none) == PP_GACHI_NO_PET);
+  CHECK(none.berries == 3);
+
+  PpGachiState st = petState(1, 0, 0, 0);
+  PpGachiState before;
+  std::memcpy(&before, &st, sizeof(st));
+  CHECK(ppGachiFeed(st) == PP_GACHI_NO_BERRIES);
+  CHECK(std::memcmp(&before, &st, sizeof(st)) == 0);
+
+  st.berries = 4;
+  CHECK(ppGachiFeed(st) == PP_GACHI_OK);
+  CHECK(st.berries == 3);
+  CHECK(st.nutrition == 1);
+
+  st.nutrition = 5;
+  CHECK(ppGachiFeed(st) == PP_GACHI_NUTRITION_FULL);
+  CHECK(st.berries == 3);
+  CHECK(st.nutrition == 5);
+  st.berries = 0;
+  CHECK(ppGachiFeed(st) == PP_GACHI_NUTRITION_FULL);
+}
+
+static void testPlayLimit()
+{
+  PpGachiState a = petState(2, 0, 0, 0);
+  CHECK(ppGachiPlay(a) == PP_GACHI_PLAY_NEED_BOTH);
+  CHECK(a.happiness == 0);
+  PpGachiState b = petState(2, 2, 0, 0);
+  CHECK(ppGachiPlay(b) == PP_GACHI_PLAY_NEED_BATTLE);
+  CHECK(b.happiness == 0);
+  PpGachiState c = petState(2, 0, 0, 2);
+  CHECK(ppGachiPlay(c) == PP_GACHI_PLAY_NEED_FOOD);
+  CHECK(c.happiness == 0);
+  PpGachiState d = petState(2, 2, 0, 3);
+  CHECK(ppGachiPlay(d) == PP_GACHI_OK);
+  CHECK(ppGachiPlay(d) == PP_GACHI_OK);
+  CHECK(d.happiness == 2);
+  CHECK(ppGachiPlay(d) == PP_GACHI_PLAY_NEED_FOOD);
+  CHECK(d.happiness == 2);
+  PpGachiState none;
+  ppGachiInit(none, 1);
+  CHECK(ppGachiPlay(none) == PP_GACHI_NO_PET);
+  for (uint8_t n = 0; n <= 10; ++n) {
+    for (uint8_t x = 0; x <= 10; ++x) {
+      PpGachiState s = petState(2, n, 0, x);
+      for (int i = 0; i < 20; ++i) {
+        ppGachiPlay(s);
+        CHECK(s.happiness <= (n < x ? n : x));
+      }
+    }
+  }
+}
+
+static void testPlayFull()
+{
+  PpGachiState st = petState(1, 5, 5, 5);
+  CHECK(ppGachiPlay(st) == PP_GACHI_PLAY_FULL);
+  CHECK(st.happiness == 5);
+}
+
+static void testBattleWin()
+{
+  PpGachiState st = petState(1, 0, 0, 0);
+  st.opponentCount = 3;
+  st.opponents[0] = 4;
+  st.opponents[1] = 7;
+  st.opponents[2] = 25;
+  CHECK(ppGachiBattleResult(st, true) == PP_GACHI_OK);
+  CHECK(st.opponentCount == 2);
+  CHECK(st.opponents[0] == 7 && st.opponents[1] == 25);
+  CHECK(st.experience == 1);
+  CHECK(st.petBattlesWon == 1);
+}
+
+static void testBattleWinAtFullExperience()
+{
+  PpGachiState st = petState(1, 0, 0, 5);
+  st.opponentCount = 2;
+  st.opponents[0] = 4;
+  st.opponents[1] = 7;
+  st.petBattlesWon = 65535;
+  CHECK(ppGachiBattleResult(st, true) == PP_GACHI_OK);
+  CHECK(st.opponentCount == 1 && st.opponents[0] == 7);
+  CHECK(st.experience == 5);
+  CHECK(st.petBattlesWon == 65535);
+  st.petBattlesWon = 9;
+  st.opponentCount = 1;
+  CHECK(ppGachiBattleResult(st, true) == PP_GACHI_OK);
+  CHECK(st.petBattlesWon == 10);
+  CHECK(st.opponentCount == 0);
+}
+
+static void testBattleLossKeepsOpponent()
+{
+  PpGachiState st = petState(1, 2, 1, 1);
+  st.opponentCount = 2;
+  st.opponents[0] = 4;
+  st.opponents[1] = 7;
+  PpGachiState before;
+  std::memcpy(&before, &st, sizeof(st));
+  CHECK(ppGachiBattleResult(st, false) == PP_GACHI_OK);
+  CHECK(std::memcmp(&before, &st, sizeof(st)) == 0);
+}
+
+static void testBattleNoOpponent()
+{
+  PpGachiState st = petState(1, 0, 0, 0);
+  CHECK(ppGachiBattleResult(st, true) == PP_GACHI_NO_OPPONENT);
+  CHECK(ppGachiBattleResult(st, false) == PP_GACHI_NO_OPPONENT);
+  PpGachiState none;
+  ppGachiInit(none, 1);
+  none.opponentCount = 1;
+  none.opponents[0] = 4;
+  CHECK(ppGachiBattleResult(none, true) == PP_GACHI_NO_PET);
+  CHECK(none.opponentCount == 1);
+}
+
+static void testEvolve()
+{
+  PpGachiState st = petState(1, 5, 5, 5);
+  st.petShiny = true;
+  st.petBattlesWon = 12;
+  CHECK(ppGachiAdvance(st) == PP_GACHI_EVOLVED);
+  CHECK(st.hasPet);
+  CHECK(st.petDex == 2);
+  CHECK(st.nutrition == 0 && st.happiness == 0 && st.experience == 0);
+  CHECK(ppGachiDexRaised(st, (uint8_t)ppGachiSpeciesIndex(2)));
+  CHECK(ppGachiDexShiny(st, (uint8_t)ppGachiSpeciesIndex(2)));
+  CHECK(ppGachiNeed(st) == 10);
+  CHECK(st.petShiny);
+  CHECK(st.petBattlesWon == 12);
+
+  PpGachiState plain = petState(1, 5, 5, 5);
+  CHECK(ppGachiAdvance(plain) == PP_GACHI_EVOLVED);
+  CHECK(!ppGachiDexShiny(plain, (uint8_t)ppGachiSpeciesIndex(2)));
+}
+
+static void testRetire()
+{
+  PpGachiState st = petState(3, 10, 10, 10);
+  st.petShiny = true;
+  st.petBattlesWon = 77;
+  st.dexRaised = 0;
+  CHECK(!ppGachiLineComplete(st, 0));
+  markLineComplete(st, 0);
+  CHECK(ppGachiAdvance(st) == PP_GACHI_RETIRED);
+  CHECK(!st.hasPet);
+  CHECK(st.nutrition == 0 && st.happiness == 0 && st.experience == 0);
+  CHECK(st.sanctuaryCount == 1);
+  CHECK(st.sanctuary[0].dex == 3);
+  CHECK(st.sanctuary[0].shiny);
+  CHECK(st.sanctuary[0].battlesWon == 77);
+  CHECK(ppGachiLineComplete(st, 0));
+}
+
+static void testAdvanceNotReady()
+{
+  PpGachiState st = petState(1, 5, 5, 4);
+  PpGachiState before;
+  std::memcpy(&before, &st, sizeof(st));
+  CHECK(ppGachiAdvance(st) == PP_GACHI_NOT_READY);
+  CHECK(std::memcmp(&before, &st, sizeof(st)) == 0);
+  PpGachiState none;
+  ppGachiInit(none, 1);
+  CHECK(ppGachiAdvance(none) == PP_GACHI_NO_PET);
+}
+
+static void testSanctuaryKeepsNewest32()
+{
+  PpGachiState st;
+  ppGachiInit(st, 8);
+  for (int i = 0; i <= 32; ++i) {
+    st.hasPet = true;
+    st.petDex = 3;
+    st.petShiny = false;
+    st.nutrition = st.happiness = st.experience = 10;
+    st.petBattlesWon = (uint16_t)i;
+    CHECK(ppGachiAdvance(st) == PP_GACHI_RETIRED);
+  }
+  CHECK(st.sanctuaryCount == PP_GACHI_SANCTUARY_CAP);
+  CHECK(st.sanctuary[0].battlesWon == 1);
+  CHECK(st.sanctuary[31].battlesWon == 32);
+}
+
+static void testReset()
+{
+  PpGachiState st;
+  ppGachiInit(st, 31);
+  ppGachiOnEvent(st, PP_FEEDBACK_POKESTOP_SPUN, true);
+  ppGachiOnEvent(st, PP_FEEDBACK_CAUGHT, true);
+  ppGachiFeed(st);
+  ppGachiPlay(st);
+  uint32_t rng = st.rng;
+  ppGachiReset(st);
+  CHECK(st.rng == rng && st.rng != 0);
+  PpGachiState fresh;
+  ppGachiInit(fresh, 1);
+  fresh.rng = rng;
+  CHECK(std::memcmp(&fresh, &st, sizeof(st)) == 0);
+}
+
+static void checkInvariants(const PpGachiState& st)
+{
+  CHECK(st.berries <= PP_GACHI_BERRY_CAP);
+  CHECK(st.opponentCount <= PP_GACHI_OPPONENT_CAP);
+  uint8_t need = ppGachiNeed(st);
+  CHECK(st.nutrition <= need);
+  CHECK(st.happiness <= need);
+  CHECK(st.experience <= need);
+  uint8_t m = st.nutrition < st.experience ? st.nutrition : st.experience;
+  CHECK(st.happiness <= m);
+  CHECK(st.sanctuaryCount <= PP_GACHI_SANCTUARY_CAP);
+  if (st.hasPet) {
+    CHECK(ppGachiSpeciesIndex(st.petDex) >= 0);
+  }
+}
+
+static bool allLinesComplete(const PpGachiState& st)
+{
+  for (uint8_t l = 0; l < PP_GACHI_LINE_COUNT; ++l) {
+    if (!ppGachiLineComplete(st, l)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void testLongRun()
+{
+  PpGachiState st;
+  ppGachiInit(st, 12345);
+  int steps = 0;
+  bool done = false;
+  while (steps < 200000 && !done) {
+    ++steps;
+    ppGachiOnEvent(st, PP_FEEDBACK_POKESTOP_SPUN, true);
+    ppGachiOnEvent(st, PP_FEEDBACK_CAUGHT, true);
+    while (ppGachiFeed(st) == PP_GACHI_OK) {
+    }
+    while (st.hasPet && st.opponentCount > 0 && st.experience < ppGachiNeed(st)) {
+      ppGachiBattleResult(st, true);
+    }
+    while (ppGachiPlay(st) == PP_GACHI_OK) {
+    }
+    ppGachiAdvance(st);
+    checkInvariants(st);
+    done = allLinesComplete(st);
+  }
+  CHECK(done);
+  CHECK(ppGachiDexRaisedCount(st) == 11);
+  std::printf("gachi_logic: long run finished in %d steps\n", steps);
+}
+
 int main()
 {
+  testNeedAndReady();
+  testFeed();
+  testPlayLimit();
+  testPlayFull();
+  testBattleWin();
+  testBattleWinAtFullExperience();
+  testBattleLossKeepsOpponent();
+  testBattleNoOpponent();
+  testEvolve();
+  testRetire();
+  testAdvanceNotReady();
+  testSanctuaryKeepsNewest32();
+  testReset();
+  testLongRun();
   testInit();
   testRandomRange();
   testSpinGrantsBerryToCap();

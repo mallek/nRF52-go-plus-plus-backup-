@@ -45,3 +45,27 @@ bool ppGachiDexRaised(const PpGachiState& st, uint8_t rosterIndex);
 bool ppGachiDexShiny(const PpGachiState& st, uint8_t rosterIndex);
 uint8_t ppGachiDexRaisedCount(const PpGachiState& st);
 bool ppGachiLineComplete(const PpGachiState& st, uint8_t line);  // its final form is raised
+
+enum PpGachiResult : uint8_t {
+  PP_GACHI_OK,
+  PP_GACHI_NO_PET,
+  PP_GACHI_NO_BERRIES,
+  PP_GACHI_NUTRITION_FULL,
+  PP_GACHI_PLAY_NEED_FOOD,     // happiness is held back by nutrition
+  PP_GACHI_PLAY_NEED_BATTLE,   // held back by experience
+  PP_GACHI_PLAY_NEED_BOTH,     // nutrition and experience are level and both below the need
+  PP_GACHI_PLAY_FULL,          // happiness is full for this stage
+  PP_GACHI_NO_OPPONENT,
+  PP_GACHI_NOT_READY,
+  PP_GACHI_EVOLVED,
+  PP_GACHI_RETIRED
+};
+
+uint8_t ppGachiNeed(const PpGachiState& st);       // care points for the current stage; 0 with no pet
+bool ppGachiReady(const PpGachiState& st);         // pet, and all three tracks >= need
+bool ppGachiIsFinalForm(const PpGachiState& st);
+PpGachiResult ppGachiFeed(PpGachiState& st);
+PpGachiResult ppGachiPlay(PpGachiState& st);
+PpGachiResult ppGachiBattleResult(PpGachiState& st, bool won);
+PpGachiResult ppGachiAdvance(PpGachiState& st);    // evolve, or retire a ready final form
+void ppGachiReset(PpGachiState& st);               // fresh game, keeps the random state
