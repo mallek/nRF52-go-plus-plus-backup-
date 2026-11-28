@@ -105,6 +105,32 @@ static void testCardKeepsArrivalFlag()
   CHECK(f.card.dex == 25);
 }
 
+static void testCardAnimFieldsDefaultToZero()
+{
+  PpGachiCard c = PpGachiCard();
+  CHECK(c.spriteAnim == 0);
+  CHECK(!c.berry);
+  PpGachiFlow f;
+  ppGachiFlowReset(f);
+  CHECK(f.card.spriteAnim == 0);
+  CHECK(!f.card.berry);
+}
+
+static void testCardKeepsAnimFields()
+{
+  PpGachiFlow f;
+  ppGachiFlowReset(f);
+  PpGachiCard c = makeCard(false);
+  c.spriteAnim = 3;   // Eat
+  c.berry = true;
+  ppGachiFlowShowCard(f, c, 0);
+  CHECK(f.card.spriteAnim == 3);
+  CHECK(f.card.berry);
+  CHECK(upd(f, false, false, PP_PICK_FIRE, PP_GACHI_CARD_MS) == PP_GFLOW_CARD_DONE);
+  CHECK(f.card.spriteAnim == 3);
+  CHECK(f.card.berry);
+}
+
 static void testBattlePickAndThrow()
 {
   PpGachiFlow f;
@@ -250,6 +276,8 @@ int main()
   testCardAcrossWrap();
   testCardNullLines();
   testCardKeepsArrivalFlag();
+  testCardAnimFieldsDefaultToZero();
+  testCardKeepsAnimFields();
   testBattlePickAndThrow();
   testButtonsIgnoredWhileRoundShows();
   testRoundEndsThenNext();

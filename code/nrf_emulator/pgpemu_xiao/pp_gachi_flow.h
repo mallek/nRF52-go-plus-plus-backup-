@@ -19,6 +19,8 @@ struct PpGachiCard {
   const char* line1;    // never nullptr once shown
   const char* line2;
   bool isArrival;       // the caller acknowledges the arrival when this card closes
+  uint8_t spriteAnim;   // a PpStageAnim value; the card's sprite plays it (Idle when 0)
+  bool berry;           // draw a berry beside the sprite (the feed card)
 };
 
 struct PpGachiFlow {

@@ -2,25 +2,23 @@
 
 #if PP_HAS_DISPLAY
 
-#include <math.h>
 #include <string.h>
 
 #include "pp_gachi_sprites.h"
 #include "pp_gachi_species.h"
+#include "pp_gachi_stage_draw.h"
 #include "pp_gachi_tuning.h"
 
 namespace {
 
 static constexpr int16_t kMargin = 6;
 static constexpr int16_t kTopY = 4;          // small top line
-static constexpr int16_t kSpriteTop = 16;    // under the top line
 static constexpr int16_t kBigChar = 12;      // text size 2: 12 x 16
 static constexpr int16_t kSmallChar = 6;     // text size 1: 6 x 8
+static constexpr int16_t kCardBoxY = 10;     // top of a card's sprite area
 
 static constexpr uint16_t kRed = 0xF800;
 static constexpr uint16_t kGreen = 0x07E0;
-static constexpr uint16_t kWhite = 0xFFFF;
-static constexpr uint16_t kBallDark = 0x4208;
 
 int16_t charW(uint8_t size)
 {
@@ -95,17 +93,8 @@ void putUint(char* buf, int16_t cap, int16_t& pos, unsigned v)
   buf[pos] = '\0';
 }
 
-void rotateAbout(float px, float py, float hx, float hy, float c, float s, int16_t& ox, int16_t& oy)
-{
-  float dx = px - hx;
-  float dy = py - hy;
-  ox = static_cast<int16_t>(hx + dx * c - dy * s + 0.5f);
-  oy = static_cast<int16_t>(hy + dx * s + dy * c + 0.5f);
-}
-
-// An empty, open Poke Ball: red upper half tilted open on a hinge at the right,
-// white lower half, a dark band and a button, nothing inside.
-void drawEmptyBall(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH, const PpMenuColors& colors)
+// The empty, open ball centred in a box, sized as in step 1.
+void drawBoxedBall(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH)
 {
   int16_t r = boxH * 10 / 28;
   int16_t rw = boxW * 10 / 30;
@@ -115,61 +104,42 @@ void drawEmptyBall(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_
   if (r < 6) {
     r = 6;
   }
-  int16_t cx = x + boxW / 2 - r / 6;
   int16_t ey = y + (boxH - r * 25 / 10) / 2 + r * 15 / 10;   // equator of the lower half
-  int16_t band = r / 6 + 1;
-
-  // Lower half.
-  gfx.fillCircle(cx, ey, r, kWhite);
-  gfx.fillRect(cx - r - 1, ey - r - 1, 2 * r + 3, r + 1, colors.bg);
-  gfx.fillRect(cx - r, ey, 2 * r + 1, band, kBallDark);
-  int16_t br = r / 5 + 1;
-  gfx.fillCircle(cx, ey + r / 2, br + 2, kBallDark);
-  gfx.fillCircle(cx, ey + r / 2, br, kWhite);
-
-  // Upper half, tilted open about the right end of the equator.
-  const float th = 0.6f;
-  float c = cosf(th);
-  float s = sinf(th);
-  float hx = static_cast<float>(cx + r);
-  float hy = static_cast<float>(ey);
-  static constexpr int16_t kSteps = 14;
-  int16_t bx = 0;
-  int16_t by = 0;
-  rotateAbout(static_cast<float>(cx), hy, hx, hy, c, s, bx, by);
-  int16_t px = 0;
-  int16_t py = 0;
-  rotateAbout(static_cast<float>(cx + r), hy, hx, hy, c, s, px, py);
-  for (int16_t i = 1; i <= kSteps; ++i) {
-    float phi = 3.14159265f * static_cast<float>(i) / static_cast<float>(kSteps);
-    int16_t nx = 0;
-    int16_t ny = 0;
-    rotateAbout(static_cast<float>(cx) + static_cast<float>(r) * cosf(phi), hy - static_cast<float>(r) * sinf(phi), hx, hy, c, s, nx, ny);
-    gfx.fillTriangle(bx, by, px, py, nx, ny, kRed);
-    gfx.drawLine(px, py, nx, ny, kBallDark);
-    px = nx;
-    py = ny;
-  }
-  // Lid rim: a dark band along the lid's base.
-  int16_t ax = 0;
-  int16_t ay = 0;
-  int16_t bx2 = 0;
-  int16_t by2 = 0;
-  int16_t cx2 = 0;
-  int16_t cy2 = 0;
-  int16_t dx2 = 0;
-  int16_t dy2 = 0;
-  rotateAbout(static_cast<float>(cx - r), hy, hx, hy, c, s, ax, ay);
-  rotateAbout(static_cast<float>(cx + r), hy, hx, hy, c, s, bx2, by2);
-  rotateAbout(static_cast<float>(cx + r), hy - static_cast<float>(band), hx, hy, c, s, cx2, cy2);
-  rotateAbout(static_cast<float>(cx - r), hy - static_cast<float>(band), hx, hy, c, s, dx2, dy2);
-  gfx.fillTriangle(ax, ay, bx2, by2, cx2, cy2, kBallDark);
-  gfx.fillTriangle(ax, ay, cx2, cy2, dx2, dy2, kBallDark);
+  ppGachiDrawEmptyBall(gfx, x + boxW / 2, ey + r, r);
 }
 
-int16_t homeSpriteBoxH(int16_t h)
+// Scale and ground point for a sprite in a box: the scale fits every animation in
+// `anims` (Idle always), and the Idle frame's crop is centred in the box. Frames of
+// other animations stand on the same ground point, so nothing jumps between them.
+// False when the sprite cannot be drawn in the box.
+bool spriteAnchor(const PpGachiSprite* spr, const PpGachiAnim* other, int16_t x, int16_t y, int16_t boxW, int16_t boxH,
+                  uint8_t& scale, int16_t& cx, int16_t& groundY)
 {
-  return ppGachiHomeLinesTop(h) - kSpriteTop - 4;
+  const PpGachiAnim* idle = ppGachiSpriteAnim(spr, PP_SANIM_IDLE);
+  uint8_t s = ppGachiSpriteScale(spr, boxW, boxH);
+  if (idle == nullptr || s == 0) {
+    return false;
+  }
+  if (other != nullptr && other != idle) {
+    while (s > 1 && (other->w * s > boxW || other->h * s > boxH)) {
+      --s;
+    }
+  }
+  scale = s;
+  int16_t left = x + (boxW - idle->w * s) / 2;
+  cx = left + idle->originX * s;
+  groundY = y + (boxH - idle->h * s) / 2 + idle->baseline * s;
+  if (other != nullptr && other != idle) {
+    // Keep the other animation inside the box too.
+    int16_t topLimit = y + other->baseline * s;
+    if (groundY < topLimit) {
+      groundY = topLimit;
+    }
+    if (groundY > y + boxH) {
+      groundY = y + boxH;
+    }
+  }
+  return true;
 }
 
 // Height of one of the four text rows in the home band.
@@ -204,24 +174,6 @@ void drawTracks(Adafruit_GFX& gfx, int16_t w, int16_t y, const PpGachiState& st,
   }
 }
 
-void drawSpriteBoxNumber(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH, uint8_t dex, const PpMenuColors& colors)
-{
-  int16_t side = minI(boxW, boxH) - 4;
-  if (side < 8) {
-    return;
-  }
-  int16_t bx = x + (boxW - side) / 2;
-  int16_t by = y + (boxH - side) / 2;
-  gfx.drawRoundRect(bx, by, side, side, 8, colors.dim);
-  char num[6];
-  int16_t pos = 0;
-  num[0] = '\0';
-  putUint(num, 6, pos, dex);
-  uint8_t size = side >= 80 ? 3 : 2;
-  int16_t n = cutLen(num, (side - 4) / charW(size));
-  printCut(gfx, bx + (side - n * charW(size)) / 2, by + (side - 8 * size) / 2, num, n, size, colors.dim);
-}
-
 }  // namespace
 
 int16_t ppGachiHomeLinesTop(int16_t h)
@@ -232,41 +184,56 @@ int16_t ppGachiHomeLinesTop(int16_t h)
 void ppGachiDrawSprite(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH, uint8_t dex, bool shiny, const PpMenuColors& colors)
 {
   const PpGachiSprite* spr = ppGachiSpriteFor(dex, shiny);
-  const PpGachiAnim* sp = ppGachiSpriteAnim(spr, PP_SANIM_IDLE);   // Idle, frame 0
-  if (sp == nullptr || sp->w == 0 || sp->h == 0 || sp->pixels == nullptr) {
-    drawSpriteBoxNumber(gfx, x, y, boxW, boxH, dex, colors);
+  uint8_t scale = 0;
+  int16_t cx = 0;
+  int16_t groundY = 0;
+  if (!spriteAnchor(spr, nullptr, x, y, boxW, boxH, scale, cx, groundY)) {
+    ppGachiDrawPlaceholder(gfx, x, y, boxW, boxH, dex, false, colors);
     return;
   }
-  int16_t scale = minI(boxW / sp->w, boxH / sp->h);
-  if (scale < 1) {
-    drawSpriteBoxNumber(gfx, x, y, boxW, boxH, dex, colors);
-    return;
-  }
-  int16_t ox = x + (boxW - sp->w * scale) / 2;
-  int16_t oy = y + (boxH - sp->h * scale) / 2;
-  int16_t rowBytes = (sp->w + 1) / 2;
-  for (int16_t row = 0; row < sp->h; ++row) {
-    const uint8_t* line = sp->pixels + row * rowBytes;
-    int16_t col = 0;
-    while (col < sp->w) {
-      uint8_t byte = line[col / 2];
-      uint8_t idx = (col % 2 == 0) ? (byte >> 4) : (byte & 0x0F);
-      if (idx == 0) {
-        ++col;
-        continue;
-      }
-      int16_t start = col;
-      ++col;
-      while (col < sp->w) {
-        uint8_t b2 = line[col / 2];
-        uint8_t i2 = (col % 2 == 0) ? (b2 >> 4) : (b2 & 0x0F);
-        if (i2 != idx) {
-          break;
-        }
-        ++col;
-      }
-      gfx.fillRect(ox + start * scale, oy + row * scale, (col - start) * scale, scale, spr->palette[idx]);
+  ppGachiDrawFrame(gfx, cx, groundY, scale, spr, ppGachiSpriteAnim(spr, PP_SANIM_IDLE), 0, false, false);
+}
+
+void ppGachiDrawCardSprite(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiCard& card, uint8_t frame, const PpMenuColors& colors)
+{
+  int16_t boxW = w - 2 * kMargin;
+  int16_t boxH = h * 55 / 100 - kCardBoxY;
+  gfx.fillRect(kMargin, kCardBoxY, boxW, boxH, colors.bg);
+  if (card.dex == 0) {
+    if (card.emptyBall) {
+      drawBoxedBall(gfx, kMargin, kCardBoxY, boxW, boxH);
     }
+    return;
+  }
+  // With a berry, the sprite keeps to the left part of the box and the berry stands beside it.
+  int16_t berryR = boxH / 12 > 5 ? boxH / 12 : 5;
+  int16_t spriteW = card.berry ? boxW - 2 * (2 * berryR + 6) : boxW;
+  int16_t spriteX = kMargin + (boxW - spriteW) / 2;
+  const PpGachiSprite* spr = ppGachiSpriteFor(card.dex, card.shiny);
+  PpStageAnim want = card.spriteAnim < PP_SANIM_COUNT ? static_cast<PpStageAnim>(card.spriteAnim) : PP_SANIM_IDLE;
+  const PpGachiAnim* anim = ppGachiSpriteAnim(spr, want);
+  uint8_t scale = 0;
+  int16_t cx = 0;
+  int16_t groundY = 0;
+  int16_t halfW = 0;
+  if (spriteAnchor(spr, anim, spriteX, kCardBoxY, spriteW, boxH, scale, cx, groundY)) {
+    ppGachiDrawFrame(gfx, cx, groundY, scale, spr, anim, frame, false, false);
+    const PpGachiAnim* idle = ppGachiSpriteAnim(spr, PP_SANIM_IDLE);
+    halfW = static_cast<int16_t>(idle->w * scale / 2);
+  } else {
+    ppGachiDrawPlaceholder(gfx, spriteX, kCardBoxY, spriteW, boxH, card.dex, false, colors);
+    int16_t side = minI(spriteW, boxH) - 4;
+    cx = spriteX + spriteW / 2;
+    groundY = kCardBoxY + (boxH + side) / 2;
+    halfW = side / 2;
+  }
+  if (card.berry) {
+    int16_t bx = cx + halfW + berryR + 4;
+    int16_t maxX = kMargin + boxW - berryR - 1;
+    if (bx > maxX) {
+      bx = maxX;
+    }
+    ppGachiDrawBerry(gfx, bx, groundY - berryR - 1, berryR);
   }
 }
 
@@ -334,7 +301,14 @@ void ppGachiDrawHomeLines(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachi
 
 void ppGachiDrawHome(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiState& st, const PpGachiHomeLines& lines, const PpMenuColors& colors)
 {
-  gfx.fillScreen(colors.bg);
+  // Clears the top band only; the stage rectangle under it is the caller's, and
+  // ppGachiDrawHomeLines clears its own band.
+  int16_t stageX = 0;
+  int16_t stageY = 0;
+  int16_t stageW = 0;
+  int16_t stageH = 0;
+  ppGachiStageRect(w, h, stageX, stageY, stageW, stageH);
+  gfx.fillRect(0, 0, w, stageY, colors.bg);
   gfx.setTextWrap(false);
 
   // Top line, small: identity on the left, the link word on the right.
@@ -346,14 +320,6 @@ void ppGachiDrawHome(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiState
     int16_t leftRoom = (w - 2 * kMargin - rightN * kSmallChar - kSmallChar) / kSmallChar;
     printCut(gfx, kMargin, kTopY, lines.topLeft, cutLen(lines.topLeft, leftRoom), 1, colors.fg);
   }
-
-  int16_t boxW = w - 2 * kMargin;
-  int16_t boxH = homeSpriteBoxH(h);
-  if (st.hasPet) {
-    ppGachiDrawSprite(gfx, kMargin, kSpriteTop, boxW, boxH, st.petDex, st.petShiny, colors);
-  } else {
-    drawEmptyBall(gfx, kMargin, kSpriteTop, boxW, boxH, colors);
-  }
   ppGachiDrawHomeLines(gfx, w, h, st, lines, colors);
 }
 
@@ -361,14 +327,9 @@ void ppGachiDrawCard(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiCard&
 {
   gfx.fillScreen(colors.bg);
   gfx.setTextWrap(false);
-  int16_t boxY = 10;
-  int16_t boxW = w - 2 * kMargin;
+  int16_t boxY = kCardBoxY;
   int16_t boxH = h * 55 / 100 - boxY;
-  if (card.dex != 0) {
-    ppGachiDrawSprite(gfx, kMargin, boxY, boxW, boxH, card.dex, card.shiny, colors);
-  } else if (card.emptyBall) {
-    drawEmptyBall(gfx, kMargin, boxY, boxW, boxH, colors);
-  }
+  ppGachiDrawCardSprite(gfx, w, h, card, 0, colors);
   const char* a = card.line1 != nullptr ? card.line1 : "";
   const char* b = card.line2 != nullptr ? card.line2 : "";
   uint8_t size = fitSize(w - 2 * kMargin, a, b);

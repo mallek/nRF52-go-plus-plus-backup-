@@ -392,12 +392,20 @@ static void drawReset(uint16_t p)
 
 }  // namespace
 
-bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
+GFXcanvas16* ppAnimCanvas()
 {
   if (canvas == nullptr) {
     canvas = new GFXcanvas16(kAnimW, kAnimH);
   }
   if (canvas == nullptr || canvas->getBuffer() == nullptr) {
+    return nullptr;
+  }
+  return canvas;
+}
+
+bool ppAnimDrawFrame(Adafruit_ST7789& tft, PpAnimKind kind, uint16_t progress)
+{
+  if (ppAnimCanvas() == nullptr) {
     return false;
   }
   canvas->fillScreen(ST77XX_BLACK);

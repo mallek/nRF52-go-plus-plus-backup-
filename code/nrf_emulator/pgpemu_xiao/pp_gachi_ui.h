@@ -25,15 +25,22 @@ struct PpGachiHomeLines {
   uint16_t bottomColor;
 };
 
-// Whole home face: clears the screen, draws the top line, the sprite (or the "no pet yet" text), then the lines.
+// Home face without its stage: clears and draws the top line, then the lines (or the
+// "no pet yet" text). The stage rectangle (ppGachiStageRect) is left untouched for the
+// caller, which draws the stage into it.
 void ppGachiDrawHome(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiState& st, const PpGachiHomeLines& lines, const PpMenuColors& colors);
-// Only the text area under the sprite (name, tracks or READY, pantry, bottom). Clears just that band.
+// Only the text area under the stage (name, tracks or READY, pantry, bottom). Clears just that band.
 void ppGachiDrawHomeLines(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiState& st, const PpGachiHomeLines& lines, const PpMenuColors& colors);
 // Y of the band ppGachiDrawHomeLines owns, so the caller can draw the reset bar over it.
 int16_t ppGachiHomeLinesTop(int16_t h);
+// Whole card: the sprite area (frame 0 of the card's animation), then the two lines.
 void ppGachiDrawCard(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiCard& card, const PpMenuColors& colors);
+// Only the sprite area of a card, for redrawing as its animation advances. Clears just that area.
+// `frame` wraps at the animation's frame count; a missing animation plays Idle.
+void ppGachiDrawCardSprite(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiCard& card, uint8_t frame, const PpMenuColors& colors);
 void ppGachiDrawBattle(Adafruit_GFX& gfx, int16_t w, int16_t h, const PpGachiBattle& battle, bool roundShowing, uint8_t myDex, bool myShiny, const PpMenuColors& colors);
-// Sprite centred in a box at the largest whole-number scale that fits; a placeholder when there is no sprite.
+// Idle frame 0, its crop centred in a box at the largest whole-number scale that fits;
+// a placeholder when there is no sprite.
 void ppGachiDrawSprite(Adafruit_GFX& gfx, int16_t x, int16_t y, int16_t boxW, int16_t boxH, uint8_t dex, bool shiny, const PpMenuColors& colors);
 
 #endif  // PP_HAS_DISPLAY
