@@ -7,6 +7,7 @@
 #include "pp_board.h"
 #include "pp_display.h"
 #include "pp_identity.h"
+#include "pp_settings.h"
 #include "pp_auth_material.h"
 #include "pp_auth_blob.h"
 #include "pp_ble_dispatch.h"
@@ -262,6 +263,8 @@ void setup()
 {
   // Identity first: the auth blob seeding and the BLE address both read it.
   ppIdentityBegin();
+  // Needs InternalFS, which the identity code just mounted.
+  ppSettingsBegin();
   ppRunBootSequence(makeAppBootRefs());
   ppFeedbackBegin();
   ppDisplayBegin();
