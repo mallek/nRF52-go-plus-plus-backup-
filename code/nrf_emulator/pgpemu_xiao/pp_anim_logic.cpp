@@ -80,3 +80,30 @@ bool ppTapCounterTap(PpTapCounter& counter, uint32_t now)
   }
   return false;
 }
+
+PpScreenAction ppEventScreenAction(PpFeedbackEvent event, bool backlightOn, bool animationsOn)
+{
+  PpScreenAction nothing = { PP_SCREEN_NOTHING, PP_ANIM_NONE };
+  PpAnimKind kind = ppAnimKindForEvent(event);
+  if (!animationsOn) {
+    // Events that would animate are silent; the rest are warnings.
+    if (kind == PP_ANIM_NONE && !backlightOn && ppEventWakesScreen(event)) {
+      PpScreenAction light = { PP_SCREEN_LIGHT_WARNING, PP_ANIM_NONE };
+      return light;
+    }
+    return nothing;
+  }
+  if (!backlightOn && !ppEventWakesScreen(event)) {
+    // Dark screen: catches and spins only count.
+    return nothing;
+  }
+  if (kind != PP_ANIM_NONE) {
+    PpScreenAction play = { PP_SCREEN_ANIM, kind };
+    return play;
+  }
+  if (!backlightOn) {
+    PpScreenAction light = { PP_SCREEN_LIGHT_WARNING, PP_ANIM_NONE };
+    return light;
+  }
+  return nothing;
+}

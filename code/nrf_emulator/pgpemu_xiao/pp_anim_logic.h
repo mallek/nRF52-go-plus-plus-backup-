@@ -56,6 +56,18 @@ PpAnimKind ppAnimKindForEvent(PpFeedbackEvent event);
 // on catch and spin for battery life.
 bool ppEventWakesScreen(PpFeedbackEvent event);
 
+// What one feedback event does to the screen, given whether it is lit and the
+// Animations setting. With animations off nothing plays and catches, spins and
+// READY neither light nor extend the screen; warnings still light a dark one.
+enum PpScreenActionKind : uint8_t { PP_SCREEN_NOTHING, PP_SCREEN_ANIM, PP_SCREEN_LIGHT_WARNING };
+
+struct PpScreenAction {
+  PpScreenActionKind kind;
+  PpAnimKind anim;  // set for PP_SCREEN_ANIM, else PP_ANIM_NONE
+};
+
+PpScreenAction ppEventScreenAction(PpFeedbackEvent event, bool backlightOn, bool animationsOn);
+
 // Records a tap; true (and resets) on the kEggTaps-th tap inside kEggTapWindowMs
 // of the first. A tap outside the window starts a new window.
 bool ppTapCounterTap(PpTapCounter& counter, uint32_t now);

@@ -124,6 +124,36 @@ static void testDarkScreenWake()
   CHECK(ppEventWakesScreen(PP_FEEDBACK_BALLS_EMPTY));
 }
 
+static void testScreenActionAnimationsOn()
+{
+  CHECK(ppEventScreenAction(PP_FEEDBACK_CAUGHT, false, true).kind == PP_SCREEN_NOTHING);
+  PpScreenAction a = ppEventScreenAction(PP_FEEDBACK_CAUGHT, true, true);
+  CHECK(a.kind == PP_SCREEN_ANIM && a.anim == PP_ANIM_CATCH);
+  a = ppEventScreenAction(PP_FEEDBACK_POKESTOP_SPUN, true, true);
+  CHECK(a.kind == PP_SCREEN_ANIM && a.anim == PP_ANIM_SPIN);
+  a = ppEventScreenAction(PP_FEEDBACK_READY, false, true);
+  CHECK(a.kind == PP_SCREEN_ANIM && a.anim == PP_ANIM_READY);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_BAG_FULL, false, true).kind == PP_SCREEN_LIGHT_WARNING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_BAG_FULL, true, true).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_FLED, true, true).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_FLED, false, true).kind == PP_SCREEN_NOTHING);
+}
+
+static void testScreenActionAnimationsOff()
+{
+  CHECK(ppEventScreenAction(PP_FEEDBACK_CAUGHT, true, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_CAUGHT, false, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_POKESTOP_SPUN, true, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_READY, false, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_READY, true, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_BAG_FULL, false, false).kind == PP_SCREEN_LIGHT_WARNING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_POKEMON_FULL, false, false).kind == PP_SCREEN_LIGHT_WARNING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_STORAGE_FULL, false, false).kind == PP_SCREEN_LIGHT_WARNING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_BALLS_EMPTY, false, false).kind == PP_SCREEN_LIGHT_WARNING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_BAG_FULL, true, false).kind == PP_SCREEN_NOTHING);
+  CHECK(ppEventScreenAction(PP_FEEDBACK_FLED, true, false).anim == PP_ANIM_NONE);
+}
+
 int main()
 {
   testBootAndReset();
@@ -134,6 +164,8 @@ int main()
   testEggDuration();
   testTapCounter();
   testDarkScreenWake();
+  testScreenActionAnimationsOn();
+  testScreenActionAnimationsOff();
   if (failures == 0) {
     std::printf("anim_logic: all passed\n");
     return 0;
