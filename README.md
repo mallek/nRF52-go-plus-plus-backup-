@@ -97,6 +97,7 @@ CLUE it adds:
   factory reset
 - more than one identity in a single build, with an on-screen menu to switch
 - a countdown to System OFF after 15 minutes disconnected
+- PokeGachi, an optional pet game fed by real spins and catches (off by default)
 
 <table>
   <tr>
@@ -140,7 +141,7 @@ last row to it. The menu closes after 20 s without a press.
 | Identity | names in the build | opens the identity list; picking another one switches to it |
 | Animations | ON, OFF | OFF skips the catch, spin, ready and boot animations. Catches, spins and the GO handshake then neither light nor extend the screen; warnings such as bag full still do. Meant as a battery saver. |
 | Screen sleep | 10s, 30s, 1m, 2m | how long the screen stays lit after a button press (default 30s) |
-| PokeGachi | OFF, ON | stored only, nothing reads it yet |
+| PokeGachi | page | opens the PokeGachi page (below); its row shows OFF or ON |
 
 Settings are saved on the device and survive a reboot, an identity switch and
 a factory reset. Switching identity clears the pairing and reboots, so pair
@@ -150,6 +151,60 @@ Adding a setting is one field in `pp_settings_logic`, one setter in
 `pp_settings` and one table entry in `pp_menu_items.cpp`. The menu logic
 (`pp_menu_logic`) and the drawing (`pp_menu_draw`) do not change. Host tests
 for the logic: `bash tests/run.sh` from WSL.
+
+### PokeGachi
+
+An optional pet game. Spinning a PokeStop earns a berry (up to 10), a catch
+brings an opponent to battle (up to 5), and the first catch after turning it on
+brings a pet. Feed it, play with it and win battles to fill its three tracks,
+then evolve it, and retire its final form to the sanctuary. Nothing decays and
+nothing lights a dark screen. Off, the device behaves exactly as without it.
+Progress is saved on the device and survives a reboot, an identity switch and
+a factory reset; only Reset game clears it.
+
+With PokeGachi on, the home screen is the pet face: identity and link state on
+top, the pet's sprite, its name, stage and tracks, the berries and opponents
+(the sleep countdown takes that line while it runs), and the last event or the
+counters at the bottom. A new pet is announced by a card the next time the
+screen is lit.
+
+| Buttons | Action |
+| --- | --- |
+| B five times in 2 s | open the PokeGachi page (only while PokeGachi is on) |
+| in a battle | B = next pick (fire, water, grass), A = throw; first to two round wins |
+
+The PokeGachi page (also the PokeGachi row of the settings menu):
+
+| Row | What it does |
+| --- | --- |
+| Feed | spends a berry for Nutrition |
+| Play | raises Happiness, which can never pass Nutrition or Experience |
+| Battle | fights the oldest waiting opponent; a win gives Experience |
+| Evolve / Retire | when all three tracks are full |
+| Pokedex | the species raised so far |
+| Sanctuary | retired pets, newest first |
+| Enabled | turns the game on or off; the pet and pantry are kept |
+| Reset game | asks first, then starts the game over |
+
+After an action a result card shows for about 2 s, or until a press. A battle
+left alone ends with no result when the screen sleeps.
+
+Sprites: the pet art is not part of this project. You fetch it yourself from
+the PokeAPI sprites repository with the sprite tool, which downloads the images
+into a local, gitignored cache and writes the sprite table:
+
+```powershell
+python tools/sprites/gen_sprites.py code/nrf_emulator/pgpemu_xiao/pp_gachi_sprites.generated.h
+```
+
+`pp_gachi_sprites.generated.h` and the cache are gitignored. Never commit them.
+To build without any art, write placeholder sprites instead (no download):
+
+```powershell
+python tools/sprites/gen_sprites.py code/nrf_emulator/pgpemu_xiao/pp_gachi_sprites.generated.h --dummy
+```
+
+With no generated file at all the firmware still builds and draws placeholders.
 
 ### Identity table
 

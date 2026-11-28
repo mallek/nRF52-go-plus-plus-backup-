@@ -4,6 +4,11 @@
 #include "pp_anim.h"
 #include "pp_anim_logic.h"
 #include "pp_display.h"
+#include "pp_gachi.h"
+#include "pp_gachi_flow.h"
+#include "pp_gachi_species.h"
+#include "pp_gachi_text.h"
+#include "pp_gachi_ui.h"
 #include "pp_identity.h"
 #include "pp_menu_draw.h"
 #include "pp_menu_items.h"
@@ -55,6 +60,7 @@ static constexpr uint16_t kDim = 0x7BEF;     // grey
 static constexpr uint16_t kAccent = 0xFD20;  // orange
 static constexpr uint16_t kGood = ST77XX_GREEN;
 static constexpr uint16_t kBad = ST77XX_RED;
+static const PpMenuColors kColors = { kBg, kFg, kDim, kAccent };
 
 static Adafruit_ST7789 tft(&SPI1, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST);
 
@@ -69,7 +75,8 @@ struct Button {
 static Button buttonA = { PP_RESET_BUTTON_ARDUINO_PIN, false, false, 0, false };
 static Button buttonB = { PP_SECOND_BUTTON_ARDUINO_PIN, false, false, 0, false };
 
-enum Mode : uint8_t { MODE_STATUS, MODE_MENU };
+// MODE_GACHI: a PokeGachi result card or battle owns the screen and the buttons.
+enum Mode : uint8_t { MODE_STATUS, MODE_MENU, MODE_GACHI };
 
 static bool started = false;
 static Mode mode = MODE_STATUS;
@@ -102,6 +109,15 @@ static bool statusDirty = true;
 
 static PpAnimState anim = { PP_ANIM_NONE, 0 };
 static uint32_t animFrameAt = 0;
+// Five quick B taps on the home screen open the PokeGachi page.
+static PpTapCounter quickTaps = { 0, 0 };
+
+// The card or battle shown in MODE_GACHI, and the mode it returns to.
+static PpGachiFlow flow = {};
+static Mode flowReturn = MODE_STATUS;
+// A card keeps its line pointers until it closes, so a composed line (the
+// shiny arrival) lives here, not on the stack.
+static char cardLine[32];
 
 static void readButton(Button& b, uint32_t now)
 {
@@ -189,8 +205,69 @@ static uint8_t nameSize(const char* name)
   return 3;
 }
 
+static bool countdownVisible()
+{
+  return !connected && sleepArmed;
+}
+
+static uint32_t sleepSecondsLeft(uint32_t now)
+{
+  int32_t leftMs = static_cast<int32_t>(sleepAt - now);
+  return leftMs > 0 ? static_cast<uint32_t>(leftMs + 999) / 1000 : 0;
+}
+
+// The pet face's text lines, built from the same state the text screen shows.
+// The buffers are static so the pointers outlive this call; the draw that
+// uses them follows at once. Records the countdown second it shows.
+static PpGachiHomeLines gachiHomeLines(uint32_t now)
+{
+  static char top[24];
+  static char countdown[20];
+  static char counts[40];
+  PpGachiHomeLines lines;
+  snprintf(top, sizeof(top), "%s %u/%u", ppIdentityName(ppIdentityActive()),
+           static_cast<unsigned>(ppIdentityActive() + 1),
+           static_cast<unsigned>(ppIdentityCount()));
+  lines.topLeft = top;
+  if (connected) {
+    lines.topRight = "CONNECTED";
+    lines.topRightColor = kGood;
+  } else if (everConnected) {
+    lines.topRight = "DISCONNECTED";
+    lines.topRightColor = kBad;
+  } else {
+    lines.topRight = "WAITING";
+    lines.topRightColor = kFg;
+  }
+  lines.pantryOverride = nullptr;
+  if (countdownVisible()) {
+    uint32_t secs = sleepSecondsLeft(now);
+    snprintf(countdown, sizeof(countdown), "sleep in %02u:%02u",
+             static_cast<unsigned>(secs / 60), static_cast<unsigned>(secs % 60));
+    lines.pantryOverride = countdown;
+    countdownShown = secs;
+  }
+  if (lastEvent[0] != '\0') {
+    lines.bottom = lastEvent;
+    lines.bottomColor = lastEventColor;
+  } else {
+    snprintf(counts, sizeof(counts), "caught %u  fled %u  spun %u", caught, fled, spun);
+    lines.bottom = counts;
+    lines.bottomColor = kFg;
+  }
+  return lines;
+}
+
+// With PokeGachi on the home screen is the pet face, which draws its text lines
+// too; otherwise the text screen frame, and the lines follow on statusDirty.
 static void drawStatusFrame()
 {
+  if (ppGachiEnabled()) {
+    PpGachiHomeLines lines = gachiHomeLines(millis());
+    ppGachiDrawHome(tft, tft.width(), tft.height(), ppGachiState(), lines, kColors);
+    statusDirty = false;
+    return;
+  }
   tft.fillScreen(kBg);
   char header[24];
   snprintf(header, sizeof(header), "PGP+ CLONE  %u/%u",
@@ -207,17 +284,6 @@ static void drawStatusFrame()
   statusDirty = true;
 }
 
-static bool countdownVisible()
-{
-  return !connected && sleepArmed;
-}
-
-static uint32_t sleepSecondsLeft(uint32_t now)
-{
-  int32_t leftMs = static_cast<int32_t>(sleepAt - now);
-  return leftMs > 0 ? static_cast<uint32_t>(leftMs + 999) / 1000 : 0;
-}
-
 // "sleep in MM:SS" under the state word. Fixed width, so it overwrites itself.
 static void drawCountdown(uint32_t now)
 {
@@ -231,6 +297,12 @@ static void drawCountdown(uint32_t now)
 
 static void drawStatusLines()
 {
+  if (ppGachiEnabled()) {
+    PpGachiHomeLines lines = gachiHomeLines(millis());
+    ppGachiDrawHomeLines(tft, tft.width(), tft.height(), ppGachiState(), lines, kColors);
+    statusDirty = false;
+    return;
+  }
   tft.fillRect(0, 120, 240, 104, kBg);
   // With the countdown showing, the counters move down a little.
   bool countdown = countdownVisible();
@@ -255,26 +327,51 @@ static void drawStatusLines()
   statusDirty = false;
 }
 
-// Bar that fills while A is held toward the factory reset.
+// The whole home screen. The pet face's frame already drew its lines.
+static void drawHomeScreen()
+{
+  drawStatusFrame();
+  if (statusDirty) {
+    drawStatusLines();
+  }
+}
+
+// Bar that fills while A is held toward the factory reset. It covers the status
+// lines, which on the pet face is the band under the sprite.
 static void drawResetHold(uint32_t heldMs, bool first)
 {
+  int16_t top = 120;
+  int16_t bandH = 104;
+  if (ppGachiEnabled()) {
+    top = ppGachiHomeLinesTop(tft.height());
+    bandH = static_cast<int16_t>(tft.height() - top);
+  }
   if (first) {
-    tft.fillRect(0, 120, 240, 104, kBg);
-    centerText("HOLD TO RESET", 128, 2, kAccent);
-    tft.drawRect(20, 156, 200, 26, kFg);
-    centerText("release to cancel", 194, 1, kDim);
+    tft.fillRect(0, top, 240, bandH, kBg);
+    centerText("HOLD TO RESET", top + 8, 2, kAccent);
+    tft.drawRect(20, top + 36, 200, 26, kFg);
+    centerText("release to cancel", top + 74, 1, kDim);
   }
   uint32_t clamped = heldMs > kResetHoldMs ? kResetHoldMs : heldMs;
   int16_t w = static_cast<int16_t>((clamped * 196u) / kResetHoldMs);
-  tft.fillRect(22, 158, w, 22, kBad);
+  tft.fillRect(22, top + 38, w, 22, kBad);
 }
 
 static void drawMenu()
 {
-  static const PpMenuColors colors = { kBg, kFg, kDim, kAccent };
   PpMenuView view;
   ppMenuBuildView(menuState, ppSettingsMenu(), ppMenuRowsThatFit(tft.height()), view);
-  ppMenuDraw(tft, tft.width(), tft.height(), view, colors);
+  ppMenuDraw(tft, tft.width(), tft.height(), view, kColors);
+}
+
+static void drawFlow()
+{
+  if (flow.screen == PP_GSCREEN_CARD) {
+    ppGachiDrawCard(tft, tft.width(), tft.height(), flow.card, kColors);
+  } else if (flow.screen == PP_GSCREEN_BATTLE) {
+    const PpGachiState& st = ppGachiState();
+    ppGachiDrawBattle(tft, tft.width(), tft.height(), flow.battle, flow.roundShowing, st.petDex, st.petShiny, kColors);
+  }
 }
 
 static void redrawAfterWake()
@@ -283,12 +380,15 @@ static void redrawAfterWake()
     drawMenu();
     return;
   }
+  if (mode == MODE_GACHI) {
+    drawFlow();
+    return;
+  }
   if (anim.kind != PP_ANIM_NONE) {
     // The animation draws its own frames and the status screen follows it.
     return;
   }
-  drawStatusFrame();
-  drawStatusLines();
+  drawHomeScreen();
 }
 
 static void startAnim(PpAnimKind kind, uint32_t now)
@@ -298,10 +398,16 @@ static void startAnim(PpAnimKind kind, uint32_t now)
   touchBacklight(now, ppAnimDurationMs(kind) + kAfterAnimHoldMs);
 }
 
-static void openMenu(uint32_t now)
+// page 0 opens on the top page; another page opens on top of it, so Back
+// returns to the top page.
+static void openMenu(uint32_t now, uint8_t page = 0)
 {
   anim.kind = PP_ANIM_NONE;
-  ppMenuOpen(menuState, ppSettingsMenu(), now);
+  if (page == 0) {
+    ppMenuOpen(menuState, ppSettingsMenu(), now);
+  } else {
+    ppMenuOpenAt(menuState, ppSettingsMenu(), page, now);
+  }
   mode = MODE_MENU;
   waitForRelease = true;
   touchBacklight(now);
@@ -330,10 +436,228 @@ static void switchIdentity(uint8_t index)
   centerText(ppIdentityName(index), 110, 4, kAccent);
   centerText("then pair it in GO", 160, 2, kFg);
   delay(800);
+  // The switch reboots; unsaved PokeGachi grants are written first.
+  ppGachiFlush();
   ppIdentitySwitchTo(index);
 }
 
-static void applyMenuResult(PpMenuResult result)
+// ---- PokeGachi cards and battle (MODE_GACHI) ------------------------------
+
+// Enters MODE_GACHI with the flow already set up. `from` is the mode the flow
+// returns to. The press that led here (a menu select) does nothing in the flow.
+static void enterFlow(Mode from)
+{
+  anim.kind = PP_ANIM_NONE;
+  flowReturn = from;
+  mode = MODE_GACHI;
+  waitForRelease = true;
+  drawFlow();
+}
+
+static void showCard(const PpGachiCard& card, Mode from, uint32_t now)
+{
+  ppGachiFlowShowCard(flow, card, now);
+  enterFlow(from);
+}
+
+// A card with the pet's sprite, or the empty ball when there is no pet. The
+// lines must outlive the card: static strings or cardLine.
+static PpGachiCard petCard(const char* line1, const char* line2)
+{
+  const PpGachiState& st = ppGachiState();
+  PpGachiCard card = {};
+  if (st.hasPet) {
+    card.dex = st.petDex;
+    card.shiny = st.petShiny;
+  } else {
+    card.emptyBall = true;
+  }
+  card.line1 = line1;
+  card.line2 = line2;
+  card.isArrival = false;
+  return card;
+}
+
+// The new pet card. Shown only on the lit home screen; acknowledged when it closes.
+static void showArrivalCard(uint32_t now)
+{
+  const PpGachiState& st = ppGachiState();
+  if (!st.hasPet) {
+    // Nothing to announce any more.
+    ppGachiAckArrival();
+    return;
+  }
+  const PpGachiSpecies* sp = ppGachiSpeciesByDex(st.petDex);
+  const char* name = sp != nullptr ? sp->name : "???";
+  PpGachiCard card = petCard(name, "is your new pet!");
+  if (st.petShiny) {
+    snprintf(cardLine, sizeof(cardLine), "A shiny %s", name);
+    card.line1 = cardLine;
+  }
+  card.isArrival = true;
+  Serial.println("Display: new pet card");
+  showCard(card, MODE_STATUS, now);
+}
+
+// Feed, Play, Battle and Evolve rows of the PokeGachi page.
+static void runGachiAction(uint8_t id, uint32_t now)
+{
+  if (!ppGachiEnabled()) {
+    // The action rows do nothing while PokeGachi is off.
+    return;
+  }
+  const PpGachiState& st = ppGachiState();
+  const char* line1 = "";
+  const char* line2 = "";
+  if (id == PP_MENU_ACTION_GACHI_BATTLE) {
+    uint8_t opponent = 0;
+    if (ppGachiBattleOpponent(opponent)) {
+      ppGachiFlowStartBattle(flow, opponent);
+      Serial.println("Display: battle");
+      enterFlow(MODE_MENU);
+      return;
+    }
+    ppGachiResultText(PP_GACHI_ACT_BATTLE, st.hasPet ? PP_GACHI_NO_OPPONENT : PP_GACHI_NO_PET, line1, line2);
+    showCard(petCard(line1, line2), MODE_MENU, now);
+    return;
+  }
+  bool hadPet = st.hasPet;
+  uint8_t dexBefore = st.petDex;
+  bool shinyBefore = st.petShiny;
+  PpGachiAction action;
+  PpGachiResult result;
+  switch (id) {
+    case PP_MENU_ACTION_GACHI_FEED: {
+      action = PP_GACHI_ACT_FEED;
+      result = ppGachiDoFeed();
+      break;
+    }
+    case PP_MENU_ACTION_GACHI_PLAY: {
+      action = PP_GACHI_ACT_PLAY;
+      result = ppGachiDoPlay();
+      break;
+    }
+    case PP_MENU_ACTION_GACHI_ADVANCE: {
+      action = PP_GACHI_ACT_ADVANCE;
+      result = ppGachiDoAdvance();
+      break;
+    }
+    default: {
+      return;
+    }
+  }
+  ppGachiResultText(action, result, line1, line2);
+  PpGachiCard card = petCard(line1, line2);
+  if (hadPet && !st.hasPet) {
+    // Retired: the card shows the pet that left, not the empty ball.
+    card.dex = dexBefore;
+    card.shiny = shinyBefore;
+    card.emptyBall = false;
+  }
+  showCard(card, MODE_MENU, now);
+}
+
+// Leaves the flow for the screen it came from. waitForRelease makes the press
+// that closed the card do nothing else there.
+static void returnFromFlow(uint32_t now)
+{
+  mode = flowReturn;
+  waitForRelease = true;
+  if (mode == MODE_MENU) {
+    ppMenuKeepAlive(menuState, now);
+    drawMenu();
+  } else {
+    drawHomeScreen();
+  }
+}
+
+static void finishBattle(uint32_t now)
+{
+  bool won = flow.battle.won;
+  uint8_t experienceBefore = ppGachiState().experience;
+  ppGachiBattleFinish(won);
+  const char* line1 = "You lost";
+  const char* line2 = "Try again";
+  if (won) {
+    line1 = "You won!";
+    // Empty when the track was already full: the win counts, the point does not.
+    line2 = ppGachiState().experience > experienceBefore ? "Experience up" : "";
+  }
+  showCard(petCard(line1, line2), flowReturn, now);
+}
+
+// B = next, A = select, read through the flow each loop; both down does nothing.
+static void updateFlow(uint32_t now)
+{
+  bool nextEdge = buttonB.pressedEdge;
+  bool selectEdge = buttonA.pressedEdge;
+  if (buttonA.down && buttonB.down) {
+    nextEdge = false;
+    selectEdge = false;
+  }
+  // The opponent's pick is drawn only on the loop where this A press throws.
+  PpGachiPick theirPick = PP_PICK_FIRE;
+  if (flow.screen == PP_GSCREEN_BATTLE && !flow.roundShowing && selectEdge && !nextEdge) {
+    theirPick = ppGachiOpponentPick();
+  }
+  switch (ppGachiFlowUpdate(flow, nextEdge, selectEdge, theirPick, now)) {
+    case PP_GFLOW_REDRAW: {
+      drawFlow();
+      break;
+    }
+    case PP_GFLOW_CARD_DONE: {
+      if (flow.card.isArrival) {
+        ppGachiAckArrival();
+      }
+      returnFromFlow(now);
+      break;
+    }
+    case PP_GFLOW_BATTLE_DONE: {
+      finishBattle(now);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+// Screen sleep while a card or battle shows. A battle is abandoned with no
+// result; a card just closes, and an arrival card stays pending so it shows
+// again on the next lit home screen. A menu under it closes too, so the screen
+// wakes on the home screen as after a menu timeout. Nothing is drawn.
+static void leaveFlowForSleep()
+{
+  if (flow.screen == PP_GSCREEN_BATTLE) {
+    Serial.println("Display: battle abandoned");
+  }
+  ppGachiFlowAbandon(flow);
+  menuState.open = false;
+  mode = MODE_STATUS;
+  statusDirty = true;
+}
+
+// The screen sleep timer, unchanged by PokeGachi: presses extend it as always.
+static void sleepIfDue(uint32_t now)
+{
+  if (!backlightOn || static_cast<int32_t>(now - backlightUntil) < 0) {
+    return;
+  }
+  if (mode == MODE_GACHI) {
+    leaveFlowForSleep();
+  }
+  setBacklight(false);
+}
+
+// The new pet card waits for the lit home screen with no animation playing
+// (checked by the caller) and no button in use.
+static bool arrivalCardDue()
+{
+  return ppGachiEnabled() && ppGachiState().arrivalPending && !buttonA.down && !buttonB.down && !comboArmed &&
+         !waitForRelease;
+}
+
+static void applyMenuResult(PpMenuResult result, uint32_t now)
 {
   switch (result.outcome) {
     case PP_MENU_OUT_REDRAW: {
@@ -345,8 +669,32 @@ static void applyMenuResult(PpMenuResult result)
       break;
     }
     case PP_MENU_OUT_ACTION: {
-      if (result.id == PP_MENU_ACTION_IDENTITY) {
-        switchIdentity(result.arg);
+      switch (result.id) {
+        case PP_MENU_ACTION_IDENTITY: {
+          switchIdentity(result.arg);
+          break;
+        }
+        case PP_MENU_ACTION_GACHI_FEED:
+        case PP_MENU_ACTION_GACHI_PLAY:
+        case PP_MENU_ACTION_GACHI_BATTLE:
+        case PP_MENU_ACTION_GACHI_ADVANCE: {
+          runGachiAction(result.id, now);
+          break;
+        }
+        case PP_MENU_ACTION_GACHI_RESET_NO: {
+          applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_BACK, now), now);
+          break;
+        }
+        case PP_MENU_ACTION_GACHI_RESET_YES: {
+          ppGachiResetGame();
+          Serial.println("Display: PokeGachi reset");
+          applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), PP_MENU_IN_BACK, now), now);
+          break;
+        }
+        default: {
+          // Pokedex and Sanctuary rows: nothing to do.
+          break;
+        }
       }
       break;
     }
@@ -367,7 +715,7 @@ static void updateMenu(uint32_t now)
   // ppMenuSelectRow() here.
   PpMenuInput input;
   if (ppMenuTwoButtonInput(buttonB.pressedEdge, buttonA.pressedEdge, buttonB.down, buttonA.down, input)) {
-    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), input, now));
+    applyMenuResult(ppMenuInput(menuState, ppSettingsMenu(), input, now), now);
   }
 }
 
@@ -441,9 +789,9 @@ void ppDisplayBegin()
   tft.setRotation(1);
   tft.setTextWrap(false);
   started = true;
+  ppGachiFlowReset(flow);
   backlightUntil = millis() + screenSleepMs();
-  drawStatusFrame();
-  drawStatusLines();
+  drawHomeScreen();
   if (ppSettings().animations) {
     startAnim(PP_ANIM_BOOT, millis());
   }
@@ -487,15 +835,28 @@ void ppDisplayUpdate()
     return;
   }
 
+  if (mode == MODE_GACHI) {
+    // The flow alone reads the buttons; a press that closes a card or ends
+    // a battle is consumed there and the loop ends here.
+    updateFlow(now);
+    sleepIfDue(now);
+    return;
+  }
+
   if (!waitForRelease) {
     updateCombo(now);
   }
   updateResetHold(now);
+  // Five quick B taps on the home screen open the PokeGachi page, only while
+  // PokeGachi is on. The fifth press waits for release inside the menu.
+  if (mode == MODE_STATUS && buttonB.pressedEdge && !buttonA.down && ppGachiEnabled() &&
+      ppTapCounterTap(quickTaps, now)) {
+    openMenu(now, ppMenuPagePokegachi());
+  }
   if (anim.kind != PP_ANIM_NONE && mode == MODE_STATUS) {
     if (ppAnimDone(anim, now)) {
       anim.kind = PP_ANIM_NONE;
-      drawStatusFrame();
-      drawStatusLines();
+      drawHomeScreen();
     } else if (now - animFrameAt >= kAnimFrameMs) {
       animFrameAt = now;
       if (!ppAnimDrawFrame(tft, anim.kind, ppAnimProgress(anim, now))) {
@@ -504,15 +865,20 @@ void ppDisplayUpdate()
       }
     }
   } else if (mode == MODE_STATUS && !holdShown && backlightOn) {
-    if (statusDirty) {
+    if (arrivalCardDue()) {
+      showArrivalCard(now);
+    } else if (statusDirty) {
       drawStatusLines();
     } else if (countdownVisible() && sleepSecondsLeft(now) != countdownShown) {
-      drawCountdown(now);
+      if (ppGachiEnabled()) {
+        // The pet face prints its lines without a background: redraw the band.
+        drawStatusLines();
+      } else {
+        drawCountdown(now);
+      }
     }
   }
-  if (backlightOn && static_cast<int32_t>(now - backlightUntil) >= 0) {
-    setBacklight(false);
-  }
+  sleepIfDue(now);
 }
 
 void ppDisplayOnEvent(PpFeedbackEvent event)
@@ -592,6 +958,8 @@ void ppDisplayOnEvent(PpFeedbackEvent event)
     }
   }
   statusDirty = true;
+  // The menu, a PokeGachi card or a battle is never drawn over: the counts
+  // above are kept and the home screen shows them when it comes back.
   if (!started || mode != MODE_STATUS) {
     return;
   }
@@ -661,7 +1029,7 @@ bool ppUiOwnsButtons()
   if (!started) {
     return false;
   }
-  return mode == MODE_MENU || buttonB.down || comboArmed || waitForRelease;
+  return mode == MODE_MENU || mode == MODE_GACHI || buttonB.down || comboArmed || waitForRelease;
 }
 
 #else
