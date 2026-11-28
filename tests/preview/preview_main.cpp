@@ -16,6 +16,10 @@
 #include "pp_gachi_species.h"
 #include "pp_gachi_text.h"
 #include "pp_gachi_ui.h"
+#include "pp_menu_draw.h"
+#include "pp_menu_items.h"
+#include "pp_menu_logic.h"
+#include "menu_stubs.h"
 
 namespace {
 
@@ -216,6 +220,155 @@ void renderBattles(int16_t w, int16_t h, const char* suffix) {
   }
 }
 
+
+#define CHECK(cond) \
+  do { \
+    if (!(cond)) { \
+      std::printf("FAIL line %d: %s\n", __LINE__, #cond); \
+      gFailed = 1; \
+    } \
+  } while (0)
+
+bool same(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
+
+void drawMenuScene(int16_t w, int16_t h, const PpMenuState& st, const char* name) {
+  PpMenuView view;
+  ppMenuBuildView(st, ppSettingsMenu(), ppMenuRowsThatFit(h), view);
+  Canvas c(w, h);
+  ppMenuDraw(c, w, h, view, kColors);
+  save(c, name);
+}
+
+PpMenuState openGachi() {
+  PpMenuState st;
+  ppMenuOpenAt(st, ppSettingsMenu(), ppMenuPagePokegachi(), 1000);
+  return st;
+}
+
+void nextTo(PpMenuState& st, uint8_t row) {
+  for (int i = 0; i < 40 && st.cursor[st.depth] != row; ++i) {
+    ppMenuInput(st, ppSettingsMenu(), PP_MENU_IN_NEXT, 1000);
+  }
+}
+
+// Row values of the PokeGachi page, read through a view of every row.
+void checkGachiValues() {
+  const PpMenu& m = ppSettingsMenu();
+  PpMenuState st = openGachi();
+  PpMenuView v;
+  gStubGachiEnabled = false;
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.rows[1].label, "Feed") && same(v.rows[1].value, "off"));
+  CHECK(same(v.rows[2].value, ""));
+  CHECK(same(v.rows[3].value, "off"));
+  CHECK(same(v.rows[4].value, "off"));
+  gStubGachiEnabled = true;
+  ppGachiInit(gStubGachi, 7);
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.rows[1].value, "no pet") && same(v.rows[2].value, "no pet"));
+  CHECK(same(v.rows[3].value, "no pet") && same(v.rows[4].value, "no pet"));
+  gStubGachi.hasPet = true;
+  gStubGachi.petDex = 1;  // a first form
+  gStubGachi.berries = 3;
+  gStubGachi.opponentCount = 2;
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.rows[1].value, "3 berries") && same(v.rows[2].value, ""));
+  CHECK(same(v.rows[3].value, "2 waiting"));
+  CHECK(same(v.rows[4].label, "Evolve") && same(v.rows[4].value, "not yet"));
+  gStubGachi.petDex = 3;  // a final form
+  gStubGachi.nutrition = gStubGachi.happiness = gStubGachi.experience = 10;
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.rows[4].label, "Retire") && same(v.rows[4].value, "READY"));
+}
+
+void checkReset() {
+  const PpMenu& m = ppSettingsMenu();
+  PpMenuState st = openGachi();
+  nextTo(st, 8);  // Reset game
+  PpMenuResult r = ppMenuInput(st, m, PP_MENU_IN_SELECT, 1000);
+  CHECK(r.outcome == PP_MENU_OUT_REDRAW);
+  PpMenuView v;
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.title, "RESET GAME?"));
+  CHECK(v.rowCount == 3 && same(v.rows[1].label, "No, keep it") && v.rows[1].selected);
+  r = ppMenuInput(st, m, PP_MENU_IN_SELECT, 1000);
+  CHECK(r.outcome == PP_MENU_OUT_ACTION && r.id == PP_MENU_ACTION_GACHI_RESET_NO);
+}
+
+void renderMenus(int16_t w, int16_t h, const char* suffix) {
+  auto name = [&](const char* base) { return std::string(base) + suffix; };
+  const PpMenu& m = ppSettingsMenu();
+  gStubGachiEnabled = true;
+  ppGachiInit(gStubGachi, 5);
+  gStubGachi.hasPet = true;
+  gStubGachi.petDex = 4;
+  gStubGachi.berries = 3;
+  gStubGachi.opponentCount = 1;
+  gStubGachi.dexRaised = (1u << 0) | (1u << 1) | (1u << 3);
+  gStubGachi.dexShiny = (1u << 1);
+  gStubGachi.sanctuaryCount = 3;
+  gStubGachi.sanctuary[0] = {1, false, 3};     // oldest
+  gStubGachi.sanctuary[1] = {4, true, 12};
+  gStubGachi.sanctuary[2] = {7, false, 40};    // newest
+
+  PpMenuState st = openGachi();
+  drawMenuScene(w, h, st, name("menu_gachi").c_str());
+  nextTo(st, 8);
+  drawMenuScene(w, h, st, name("menu_gachi_last").c_str());
+
+  // Pokedex: every visible row has its own text.
+  st = openGachi();
+  nextTo(st, 5);
+  ppMenuInput(st, m, PP_MENU_IN_SELECT, 1000);
+  PpMenuView v;
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(same(v.title, "POKEDEX"));
+  CHECK(v.totalRows == 1 + PP_GACHI_SPECIES_COUNT);
+  CHECK(same(v.rows[1].label, ppGachiSpeciesAt(0).name));
+  CHECK(same(v.rows[2].label, (std::string(ppGachiSpeciesAt(1).name) + " *").c_str()));
+  CHECK(same(v.rows[3].label, "???"));
+  CHECK(same(v.rows[4].label, ppGachiSpeciesAt(3).name));
+  for (uint8_t i = 1; i < v.rowCount; ++i) {
+    for (uint8_t j = static_cast<uint8_t>(i + 1); j < v.rowCount; ++j) {
+      if (!same(v.rows[i].label, "???") || !same(v.rows[j].label, "???")) {
+        CHECK(!same(v.rows[i].label, v.rows[j].label));
+        CHECK(v.rows[i].label != v.rows[j].label);  // never the same storage
+      }
+    }
+  }
+  drawMenuScene(w, h, st, name("menu_pokedex").c_str());
+  nextTo(st, 11);
+  gStubGachi.dexRaised = (1u << 8) | (1u << 9) | (1u << 10);  // the scrolled end shows text too
+  gStubGachi.dexShiny = (1u << 10);
+  drawMenuScene(w, h, st, name("menu_pokedex_end").c_str());
+
+  // Sanctuary, newest first.
+  st = openGachi();
+  nextTo(st, 6);
+  ppMenuInput(st, m, PP_MENU_IN_SELECT, 1000);
+  ppMenuBuildView(st, m, PP_MENU_MAX_VISIBLE, v);
+  CHECK(v.rowCount == 4);
+  CHECK(std::string(v.rows[1].label).find(" 40W") != std::string::npos);
+  CHECK(std::string(v.rows[2].label).find(" 12W *") != std::string::npos);
+  CHECK(std::string(v.rows[3].label).find(" 3W") != std::string::npos);
+  drawMenuScene(w, h, st, name("menu_sanctuary").c_str());
+
+  // Reset confirm.
+  st = openGachi();
+  nextTo(st, 8);
+  ppMenuInput(st, m, PP_MENU_IN_SELECT, 1000);
+  drawMenuScene(w, h, st, name("menu_reset").c_str());
+
+  // Off, and on with no pet.
+  gStubGachiEnabled = false;
+  st = openGachi();
+  drawMenuScene(w, h, st, name("menu_gachi_off").c_str());
+  gStubGachiEnabled = true;
+  ppGachiInit(gStubGachi, 5);
+  st = openGachi();
+  drawMenuScene(w, h, st, name("menu_gachi_nopet").c_str());
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -227,8 +380,12 @@ int main(int argc, char** argv) {
   renderHomes(240, 240, "");
   renderCards(240, 240, "");
   renderBattles(240, 240, "");
+  checkGachiValues();
+  checkReset();
+  renderMenus(240, 240, "");
   renderHomes(172, 320, "_172x320");
   renderCards(172, 320, "_172x320");
   renderBattles(172, 320, "_172x320");
+  renderMenus(172, 320, "_172x320");
   return gFailed;
 }

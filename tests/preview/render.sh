@@ -35,6 +35,8 @@ g++ -std=c++17 -Wall -Wextra -Werror $DEFS $INC \
   "$OBJ/Adafruit_GFX.o" \
   "$SK/pp_menu_draw.cpp" \
   "$SK/pp_menu_logic.cpp" \
+  "$SK/pp_menu_items.cpp" \
+  "$HERE/menu_stubs.cpp" \
   "$SK/pp_gachi_ui.cpp" \
   "$SK/pp_gachi_sprites.cpp" \
   "$SK/pp_gachi_text.cpp" \
